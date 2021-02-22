@@ -1,0 +1,482 @@
+* Low Level Programming
+** Program
+   - sections - ~.data~, ~.text~
+   - can be mixed in source code, but will be contiguous in resulting binary
+   - a program can be composed of multiple files, but there must only be one ~_start~
+   - ~text~ format: [name]: [type] [values]
+   - an "immediate value" is equivalent to a literal in higher level languages
+   - data "types":
+     - db - bytes
+     - dw - words; 2 bytes
+     - dd - double words; 4 bytes
+     - dq - quad words; 8 bytes
+   - label starting with ~.~ is a local label
+   - global lables for pseudo-namespaces, allowing local labels with the same name to be distinguished
+
+** Registers
+  - rax - accumulator
+  - rbx - base register; used for addresssing in early cpus
+  - rcx - cycles (loops)
+  - rdx - store data during i/o ops
+  - rsp - addr of topmost el in hw stack
+  - rbp - stack frame's base
+  - rsi - source index in string manip cmds
+  - rdi - destination index in str manip cmds
+*** ~rflags~ Register
+    - source: https://wiki.osdev.org/CPU_Registers_x86-64#RFLAGS_Register
+    | Bit(s) | Label | Description                      |
+    |--------+-------+----------------------------------|
+    |      0 | CF    | Carry Flag                       |
+    |      1 | 1     | Reserved                         |
+    |      2 | PF    | Parity Flag                      |
+    |      3 | 0     | Reserved                         |
+    |      4 | AF    | Auxiliary Carry Flag             |
+    |      5 | 0     | Reserved                         |
+    |      6 | ZF    | Zero Flag                        |
+    |      7 | SF    | Sign Flag                        |
+    |      8 | TF    | Trap Flag                        |
+    |      9 | IF    | Interrupt Enable Flag            |
+    |     10 | DF    | Direction Flag                   |
+    |     11 | OF    | Overflow Flag                    |
+    |  12-13 | IOPL  | I/O Privilege Level              |
+    |     14 | NT    | Nested Task                      |
+    |     15 | 0     | Reserved                         |
+    |     16 | RF    | Resume Flag                      |
+    |     17 | VM    | Virtual-8086 Mode                |
+    |     18 | AC    | Alignment Check / Access Control |
+    |     19 | VIF   | Virtual Interrupt Flag           |
+    |     20 | VIP   | Virtual Interrupt Pending        |
+    |     21 | ID    | ID Flag                          |
+    |  22-63 | 0     | Reserved                         |
+*** Commonly used ~rflags~:
+    - these are the only ones displayed by ~edb~ (Evan's debugger), abbreviated with one letter
+    | Bit(s) | Label | Abbr | Description                      |
+    |--------+-------+------+----------------------------------|
+    |      0 | CF    |  C   | Carry Flag                       |
+    |      2 | PF    |  P   | Parity Flag                      |
+    |      4 | AF    |  A   | Auxiliary Carry Flag             |
+    |      6 | ZF    |  Z   | Zero Flag                        |
+    |      7 | SF    |  S   | Sign Flag                        |
+    |      8 | TF    |  T   | Trap Flag                        |
+    |     10 | DF    |  D   | Direction Flag                   |
+    |     11 | OF    |  O   | Overflow Flag                    |
+** Hello World - segfaulting
+#+BEGIN_SRC asm :tangle hello.asm
+global _start
+
+section .data
+  message: db 'hello, world!', 10
+
+section .text
+_start:
+  mov rax, 1 ; store syscall number/id
+  mov rdi, 1 ; syscall arg #1
+  mov rsi, message ; syscall arg #2
+  mov rdx, 14 ; syscall arg #3
+  syscall
+#+END_SRC
+- program has no exit instruction, and thus continues executing after syscall
+- next address likely will contain garbage resulting in such errors
+
+** ~nasm~
+   - assembler used: NASM version 2.14.02 on Ubuntu
+   - nasm is also available for Windows; syntax is the same but syscall and register usage is different
+   - Linux is used/assumed unless mentioned otherwise
+   - to compile and execute a program:
+#+BEGIN_SRC
+$ nasm -felf64 hello.asm -o hello.o
+$ ld -o hello hello.o 
+$ chmod u+x hello 
+$ ./hello 
+hello, world!
+Segmentation fault (core dumped)
+#+END_SRC
+
+** ~radare2~
+- CLI debugger
+- easy to compile from source, "it just works" (https://github.com/radareorg/radare2https://github.com/radareorg/radare2)
+- clone repo, install dependencies (one command), and build - it will also be installed
+- to update after build/install, go to the repo and: ~./sys/install.sh~ (it will ~git pull~, build and install new version)
+- to start debugging: ~$ r2 -d loop.asm.exe~
+- while debugging, ~:~ can be used to enter command mode
+- ~.~ takes you to ~rip~, ~jk~ moves down/up
+- ~v~ open debug view
+- ~ds?~ - help on debug commands
+- ~F7~ or ~ds~ - step in
+- Q: where can i find a reference of all debugging commands ? not the ~p*~ ones, but stuff like ~F7~
+- Q: what is the ~orax~ register ?
+*** Mouse
+   - even if r2 is a CLI app, mouse does work and can be useful
+   - clicking on a register in the debug view will hilight it in regsiters view
+     - only does full matches though - so click on ecx won't hilight rcx
+   - clicking on [x] in top-left of panels will close them
+*** Resources
+- using ~radare2~ for debugging: https://www.youtube.com/watch?v=Yn1fGs8WwSM (channel: https://www.youtube.com/c/BinaryAdventure/videos)
+- https://www.megabeets.net/a-journey-into-radare-2-part-1/
+
+** ~rax2~
+   - useful tool for conversions - installed as part of ~radare2~
+   - NOTE: it omits leading 0s
+#+BEGIN_SRC sh
+$ rax2 Bx1122334455667788 # ⇒ 1000100100010001100110100010001010101011001100111011110001000b
+$ rax2 0x40 # ⇒ 64
+$ rax2 Bx40 # ⇒ 1000000b # (64 in binary)
+$ rax2 60 # ⇒ 0x3c
+$ rax2 Bx3c # ⇒ 111100b
+$ rax2 0001000100100010b # ⇒ 0x1122
+$ rax2 0x22 # ⇒ 34
+#+END_SRC
+
+** Hello World - Fixed Exit
+#+BEGIN_SRC asm :tangle hello-fixed.asm
+  global _start
+
+  section .data
+  message: db 'goodbye, world!', 10
+
+  section .text
+  _start:
+    mov rax, 1 ; store syscall number/id
+    mov rdi, 1 ; syscall arg #1 - fd - stdout
+    mov rsi, message ; syscall arg #2 - buffer address
+    mov rdx, 14 ; syscall arg #3 - max nr of bytes
+    syscall
+
+    mov rax, 60 ; exit syscall
+    xor rdi, rdi ; exit code
+    syscall
+#+END_SRC
+
+** Comparisons and Conditionals
+   - assembly doesn't have ~if~ statements - but it has instructions which, after executing, will flip bits in a special register, ~rflags~
+   - the following instruction can then check the ~rflags~ bits it is interested in
+   - ~cmp~ and ~sub~ are very similar; in both cases, a subtraction is performed and flags are set in the same manner; ~sub~ will also update the first operand with the result
+   - if the frist operand of ~cmp~ is greater than the second one, it will set the first bit in ~rflags~ (known as ~CF~) to 0
+   - if the second operand is greater than the first, ~CF~ will be 1
+   - other flags: (source: https://stackoverflow.com/a/43844182)
+#+BEGIN_SRC
+CF - 1 if unsigned op2 > unsigned op1
+OF - 1 if sign bit of OP1 != sign bit of result
+SF - 1 if MSB (aka sign bit) of result = 1
+ZF - 1 if Result = 0 (i.e. op1=op2)
+AF - 1 if Carry in the low nibble of result
+PF - 1 if Parity of Least significant byte is even
+#+END_SRC
+   - for example, if we use ~cmp~ to compare 42 and 43, like so:
+#+BEGIN_SRC asm :tangle cmp.asm
+  global _start
+  section .text
+  _start:
+  mov rax, 42
+
+  cmp rax, 43 ; scenario A - op1 < op2
+  ;  | Bit(s) | Label| Value  | Description                      |
+  ;  |--------+------+--------+----------------------------------|
+  ;  |      0 | CF   |   1    | Carry Flag                       |
+  ;  |      2 | PF   |   1    | Parity Flag                      |
+  ;  |      4 | AF   |   1    | Auxiliary Carry Flag             |
+  ;  |      6 | ZF   |   0    | Zero Flag                        |
+  ;  |      7 | SF   |   1    | Sign Flag                        |
+  ;  |      8 | TF   |   0    | Trap Flag                        |
+  ;  |     10 | DF   |   0    | Direction Flag                   |
+  ;  |     11 | OF   |   0    | Overflow Flag                    |
+
+  cmp rax, 41 ; scenario B - op1 > op2
+  ;  | Bit(s) | Label| Value  | Description                      |
+  ;  |--------+------+--------+----------------------------------|
+  ;  |      0 | CF   |   0    | Carry Flag                       |
+  ;  |      2 | PF   |   0    | Parity Flag                      |
+  ;  |      4 | AF   |   0    | Auxiliary Carry Flag             |
+  ;  |      6 | ZF   |   0    | Zero Flag                        |
+  ;  |      7 | SF   |   0    | Sign Flag                        |
+  ;  |      8 | TF   |   0    | Trap Flag                        |
+  ;  |     10 | DF   |   0    | Direction Flag                   |
+  ;  |     11 | OF   |   0    | Overflow Flag                    |
+
+  cmp rax, 42 ; scenario C - op1 = op2
+  ;  | Bit(s) | Label| Value  | Description                      |
+  ;  |--------+------+--------+----------------------------------|
+  ;  |      0 | CF   |   0    | Carry Flag                       |
+  ;  |      2 | PF   |   1    | Parity Flag                      |
+  ;  |      4 | AF   |   0    | Auxiliary Carry Flag             |
+  ;  |      6 | ZF   |   1    | Zero Flag                        |
+  ;  |      7 | SF   |   0    | Sign Flag                        |
+  ;  |      8 | TF   |   0    | Trap Flag                        |
+  ;  |     10 | DF   |   0    | Direction Flag                   |
+  ;  |     11 | OF   |   0    | Overflow Flag                    |
+#+END_SRC
+  - ~radare2~ has the ~drc~ command, which gives the following outputs for gt, lt and eq:
+#+BEGIN_SRC
+0 0 1 EQ
+1 1 0 NE
+1 0 0 CF
+1 0 0 NEG
+0 0 0 OF
+1 0 0 HI
+1 0 1 HE
+0 1 1 LO
+0 1 1 LOE
+0 1 1 GE
+0 1 0 GT
+1 0 0 LT
+1 0 1 LE
+#+END_SRC
+
+** ~edb~
+- looks like a solid option but building from source is more work and packaged version is out of date (1.0.0, when latest is 1.3.0)
+- better display of ~rflags~ - just the meaningful ones, and they change colour when changed
+
+** Loops
+   - let's say we want to set ~rbx~ to 1 if ~rax~ is > 50, and to ~0~ otherwise:
+#+BEGIN_SRC asm :tangle conditional.asm
+  global _start
+  section .text
+  _start:
+    mov rax, 51   ; it's >50, so we want to set rbx to 1
+    cmp rax, 50   ; compare the two operands - will set dedicated register falgs
+    jl .large     ; if th 
+#+END_SRC
+** Common Instructions
+   - added instructions used in the book, and grouped related ones
+#+BEGIN_SRC asm
+  ; most common instruction
+  mov
+
+  ; stack, calls, addresses
+  push
+  pop
+  call
+  ret
+  syscall
+  lea
+
+  ; bitwise
+  xor
+  or
+  and
+  shl
+  sar
+
+  ; conditionals/loops
+  test
+  je
+  jmp
+  jne
+
+  ; math
+  add
+  cmp
+  inc
+  sub
+  fld
+  fstp
+  imul
+  mul
+  idiv
+  div
+#+END_SRC
+   - interesting, but outdadet: https://www.strchr.com/x86_machine_code_statistics
+
+** Syscalls
+   - on Linux, each syscall has a unique, constant integer as ID; for example, for ~write~ it's 1
+   - syscalls are invoked with the ~syscall~ instruction on x86-64; on 32, interrupt 0x80 is used instead
+   - x86-64 Linux syscalls: http://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
+   - syscall ids are different on 32 bits compared to 64
+   - to invoke a syscal:
+     - put it's ID in ~rax~
+     - put arguments in the corresponding register (see below)
+     - invoke ~syscall~
+   - syscalls would preserve rsp, rbp, rbx, r12, r13, r14, and r15 but might trample other registers
+
+*** Arguments - Linux
+  rdi 	1st argument
+  rsi 	2nd argument
+  rdx 	3rd argument
+  rcx 	4th argument
+  r8 	  5th argument
+  r9 	  6th argument
+
+*** Common Syscalls
+    TODO
+    
+*** Resources
+   - https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_64.tbl
+   - https://www.nekosecurity.com/x86-64-assembly/part-3-nasm-anatomy-syscall-passing-argument
+   - https://blog.packagecloud.io/eng/2016/04/05/the-definitive-guide-to-linux-system-calls/
+   - "Where do you find the syscall table for Linux?" - https://unix.stackexchange.com/a/499016/39603
+     
+** Pointers and Addresses
+   - some syscalls require "pointers" as args - addresses
+   - on a 64 bit CPU, addresses are 64 bits - 8 bytes
+   - instructions use square brackets to "dereference" a pointer - and take contents at the address, as opposed to the actual address itself
+   - the ~mov~ instruction is a bit misleading as it won't move but will actually copy - the source is unchanged
+   - how many bytes would be copied ? The first operand determines that (?: exceptions to this rule ?)
+#+BEGIN_SRC asm :tangle pointers.asm
+global _start
+section .data
+  foo: db 'abcdefgh'
+section .text
+_start:
+  mov rax, foo   ; put the address of the first byte of foo into rax
+  mov rax, 0     ; zero out rax
+  mov ah, [foo]  ;
+  mov al, [foo]  ;
+  mov ax, [foo]  ; ax is 2 bytes; so starting with the first byte of foo, copy 2 bytes to ax
+  mov eax, [foo] ; eax is 4 bytes; so starting with the first byte of foo, copy 4 bytes to ax
+  mov rax, [foo] ; rax is 8 bytes; so starting with the first byte of foo, copy 8 bytes to ax
+#+END_SRC
+
+   - to load the actual address of a location in a registry, use ~lea~
+   - ~mov~ can be used instead of ~lea~ in some cases - when address does not require adjustments
+   - above, ~foo~ is an address in memory, referencing the first byte with contents ('f')
+   - ~mov rax, foo~ ⇒ load address of ~foo~ into rax
+   - ~mov rax, [foo]~ ⇒ load contents of ~foo~ (8 bytes ?) into rax
+   - ~lea rax, foo~ ⇒ error: invalid combination of opcode and operands
+#+BEGIN_SRC asm
+global _start
+section .data
+  foo: db 'foo'
+section .text
+_start:
+  lea rax, foo
+#+END_SRC
+
+#+BEGIN_SRC asm
+global _start
+section .text
+_start:
+  lea rax, [rax]
+  mov rax, [rax]
+#+END_SRC
+   - ~lea rax, [foo]~ ⇒ load address of ~foo~ into rax
+   - ~lea rax, [foo + 1]~ ⇒ load address of (~foo~ + 1) into rax
+   - ~mov rax, [foo + 1]~ ⇒ load contents of (~foo~ + 1) into rax
+
+*** Example: print a string, one character at a time
+#+BEGIN_SRC asm :tangle loop.asm
+global _start
+
+section .data
+  message: db 'hello, world!', 10
+
+section .text
+_start:
+  mov ecx, 0 ; loop index
+
+.loop:
+  mov rax, 1 ; store syscall number/id
+  mov rdi, 1 ; syscall arg #1 - fd - stdout
+  lea rsi, [message + ecx] ; syscall arg #2 - buffer address
+  mov rdx, 1 ; syscall arg #3 - max nr of bytes
+  push rcx
+  syscall
+  pop rcx
+
+  ; compare & loop
+  inc ecx ; increment loop index
+  cmp ecx, 14
+  jne .loop
+
+  mov rax, 60 ; exit syscall
+  mov rdi, 0  ; exit code
+  syscall
+#+END_SRC
+
+** Example: print rax register contents as hex
+#+BEGIN_SRC asm :tangle print-rax.asm
+  global _start
+
+  section .data
+    hex_chars: db '0123456789ABCDEF'
+
+  section .text
+  _start:
+    mov rax, 0x1122334455667788
+    mov rdi, 1
+    mov rdx, 1
+    mov rcx, 64 ; cl = 0x40 = 0100 0000 = 64
+
+  .loop:
+    ; We're going to make some changes to rax, so let's save its current value on the stack
+    push rax
+
+    ; The rax register (like most of other ones) is 64 bits long, and each hex
+    ; char encodes 4 bits so we process it 4 bits at a time. We keep track of
+    ; the number of remaining bits to be processed in rcx, so it goes down by 4
+    ; on each iteration.
+    ; rcx: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0100 0000 (0x40 = 64)
+    sub rcx, 4
+    ; rcx: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0011 1100 (0x3c = 60)
+
+    ; Move the next 4 bits to the end of the register, by shifting right. We
+    ; can use rcx as the number of bits to shift. On the first iteration of
+    ; the loop, rcx (and therefore cl) will be 60; shifting right 60 bits
+    ; leaves the first 4 bits at the end of rax. This destroys the rest of the
+    ; bits, but that's OK because we've pushed the original value of rax to
+    ; the stack.
+    ;    :    1    1    2    2    3    3    4    4    5    5    6    6    7    7    8    8
+    ; rax: 0001 0001 0010 0010 0011 0011 0100 0100 0101 0101 0110 0110 0111 0111 1000 1000
+    sar rax, cl
+    ; rax: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0001 (0x1)
+
+    ; Get rid of all bits except the last 4.This is not useful for the first
+    ; iteration, but in the following ones there will be more bits left after
+    ; shifting. For example, after shifting 52 bits (3rd iteration), rax is
+    ; 0x112 - but we only want the last 4 bits:
+    ; rax: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0001 0001 0010 (0x0112 = 274)
+    ; 0xf: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 1111 (0x000f = 15)
+    ; rax: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0010 (0x0002 = 2) ⇐ result after `and rax, 0xf`
+    ; On the first iteration:
+    ; rax: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0001 (0x1)
+    ; 0xf: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 1111 (0xf = 15)
+    and rax, 0xf
+    ; rax: 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0001 (0x01)
+
+    ; Start preparing for syscall to print. The second argument is the address
+    ; of what to print. We don't start with the first argument (syscall id)
+    ; because that goes into rax, and we need rax' current value. We interpret the
+    ; 4 bits in rax as a number, which is used to index into the `hex_chars` array.
+    ; For example, if the 4 bits are 1010, that's 10 in decimal; the 10th item in the
+    ; array is the corresponding hex char for 10, 'A' - which would get printed by the
+    ; 'write' syscall invoked a bit later.
+    lea rsi, [hex_chars + rax]
+
+    ; Now we can set the first param for the syscall
+    mov rax, 1 
+
+    ; Syscalls can change rcx, so let's save it's value
+      push rcx
+
+    ; inovke syscall - prints the character encoded by the current value of
+    syscall
+
+    ; restore rcx
+    pop rcx
+
+    ; restore value of rax
+    pop rax
+
+    ; check if we need to loop again (we have more bits to print)
+    cmp ecx, 0
+    jne .loop
+
+    ; invoke exit syscall
+    mov rax, 60
+    mov rdi, 0
+    syscall
+#+END_SRC
+
+** Resources
+- nice quick-start, but format is a bit weird: https://www.nasm.us/doc/nasmdoc2.html#section-2.2
+- Anatomy of a system call, part 1 - https://lwn.net/Articles/604287/
+- https://github.com/torvalds/linux/tree/master/include/uapi/linux
+- examples: https://www.csee.umbc.edu/portal/help/nasm/sample_64.shtml
+- very good, but 32-bit: https://asmtutor.com/#lesson2
+- good: https://cs.lmu.edu/~ray/notes/nasmtutorial/
+- videos: https://www.youtube.com/playlist?list=PLetF-YjXm-sCH6FrTz4AQhfH6INDQvQSn
+  
+#+BEGIN_SRC asm :tangle foo.asm
+  global _start
+  section .text
+  _start:
+#+END_SRC
