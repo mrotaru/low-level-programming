@@ -59,7 +59,7 @@ _start:
   mov rax, 1 
 
   ; Syscalls can change rcx, so let's save it's value
-    push rcx
+  push rcx
 
   ; inovke syscall - prints the character encoded by the current value of
   syscall

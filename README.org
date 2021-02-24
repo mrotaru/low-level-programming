@@ -162,14 +162,13 @@ ZF - 1 if Result = 0 (i.e. op1=op2)
 AF - 1 if Carry in the low nibble of result
 PF - 1 if Parity of Least significant byte is even
 #+END_SRC
-   - for example, if we use ~cmp~ to compare 42 and 43, like so:
+   - for example, if we use ~cmp~ to compare 42 and 43:
 #+BEGIN_SRC asm :tangle cmp.asm
   global _start
   section .text
   _start:
-  mov rax, 42
 
-  cmp rax, 43 ; scenario A - op1 < op2
+  cmp 42, 43 ; scenario A - op1 < op2
   ;  | Bit(s) | Label| Value  | Description                      |
   ;  |--------+------+--------+----------------------------------|
   ;  |      0 | CF   |   1    | Carry Flag                       |
@@ -181,7 +180,7 @@ PF - 1 if Parity of Least significant byte is even
   ;  |     10 | DF   |   0    | Direction Flag                   |
   ;  |     11 | OF   |   0    | Overflow Flag                    |
 
-  cmp rax, 41 ; scenario B - op1 > op2
+  cmp 42, 41 ; scenario B - op1 > op2
   ;  | Bit(s) | Label| Value  | Description                      |
   ;  |--------+------+--------+----------------------------------|
   ;  |      0 | CF   |   0    | Carry Flag                       |
@@ -193,7 +192,7 @@ PF - 1 if Parity of Least significant byte is even
   ;  |     10 | DF   |   0    | Direction Flag                   |
   ;  |     11 | OF   |   0    | Overflow Flag                    |
 
-  cmp rax, 42 ; scenario C - op1 = op2
+  cmp 42, 42 ; scenario C - op1 = op2
   ;  | Bit(s) | Label| Value  | Description                      |
   ;  |--------+------+--------+----------------------------------|
   ;  |      0 | CF   |   0    | Carry Flag                       |
@@ -255,7 +254,7 @@ PF - 1 if Parity of Least significant byte is even
   or
   and
   shl
-  sar
+  sar rax, cl ; if trying to use, for ex, rcx: error: invalid combination of opcode and operands
 
   ; conditionals/loops
   test
@@ -288,17 +287,23 @@ PF - 1 if Parity of Least significant byte is even
      - invoke ~syscall~
    - syscalls would preserve rsp, rbp, rbx, r12, r13, r14, and r15 but might trample other registers
 
-*** Arguments - Linux
-  rdi 	1st argument
-  rsi 	2nd argument
-  rdx 	3rd argument
-  rcx 	4th argument
-  r8 	  5th argument
-  r9 	  6th argument
-
+*** Syscall Arguments - Linux
+  | Argument Nr. | Register |
+  |--------------+----------|
+  | 1st          | rdi      |
+  | 2nd          | rsi      |
+  | 3rd          | rdx      |
+  | 4th          | r10      |
+  | 5th          | r8       |
+  | 6th          | r9       |
+  
 *** Common Syscalls
-    TODO
-    
+| Id | System call | $1 (rdi)        | $2 (rsi)        | $3 (rdx)     | $4 (r10) | $5 (r8) | $5 (r9) |
+|----+-------------+-----------------+-----------------+--------------+----------+---------+---------|
+|  0 | read        | unsigned int fd | char *buf       | size_t count |          |         |         |
+|  1 | write       | unsigned int fd | const char *buf | size_t count |          |         |         |
+| 60 | exit        | int error_code  |                 |              |          |         |         |
+
 *** Resources
    - https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_64.tbl
    - https://www.nekosecurity.com/x86-64-assembly/part-3-nasm-anatomy-syscall-passing-argument
@@ -309,48 +314,40 @@ PF - 1 if Parity of Least significant byte is even
    - some syscalls require "pointers" as args - addresses
    - on a 64 bit CPU, addresses are 64 bits - 8 bytes
    - instructions use square brackets to "dereference" a pointer - and take contents at the address, as opposed to the actual address itself
+   - so ~mov rax, [foo]~ can be thought of as ~mov rax, *foo~
    - the ~mov~ instruction is a bit misleading as it won't move but will actually copy - the source is unchanged
    - how many bytes would be copied ? The first operand determines that (?: exceptions to this rule ?)
 #+BEGIN_SRC asm :tangle pointers.asm
-global _start
-section .data
-  foo: db 'abcdefgh'
-section .text
-_start:
-  mov rax, foo   ; put the address of the first byte of foo into rax
-  mov rax, 0     ; zero out rax
-  mov ah, [foo]  ;
-  mov al, [foo]  ;
-  mov ax, [foo]  ; ax is 2 bytes; so starting with the first byte of foo, copy 2 bytes to ax
-  mov eax, [foo] ; eax is 4 bytes; so starting with the first byte of foo, copy 4 bytes to ax
-  mov rax, [foo] ; rax is 8 bytes; so starting with the first byte of foo, copy 8 bytes to ax
+    global _start
+    section .data
+      foo: db 'aaaaaaaa' ; NOTE: ASCII code for 'a' is 96, or 0x61
+    section .text
+    _start:
+      mov rax, foo   ; 00 00 00 00 00 40 20 00 ; put the address of the first byte of foo into rax
+      mov rax, 0     ; 00 00 00 00 00 00 00 00 ; zero out rax
+      mov ah,  [foo] ; 00 00 00 00 00 00 61 00 ; fill the "high" byte of ax with the first byte of foo
+      mov al,  [foo] ; 00 00 00 00 00 00 61 61 ; fill the "low" byte of ax with the first byte of foo (note: high byte is filled from previous command)
+      mov ax,  [foo] ; 00 00 00 00 00 00 61 61 ; ax is 2 bytes; so starting with the first byte of foo, copy 2 bytes to ax
+      mov eax, [foo] ; 00 00 00 00 61 61 61 61 ; eax is 4 bytes; so starting with the first byte of foo, copy 4 bytes to ax
+      mov rax, [foo] ; 61 61 61 61 61 61 61 61 ; rax is 8 bytes; so starting with the first byte of foo, copy 8 bytes to ax
 #+END_SRC
 
    - to load the actual address of a location in a registry, use ~lea~
    - ~mov~ can be used instead of ~lea~ in some cases - when address does not require adjustments
    - above, ~foo~ is an address in memory, referencing the first byte with contents ('f')
-   - ~mov rax, foo~ ⇒ load address of ~foo~ into rax
-   - ~mov rax, [foo]~ ⇒ load contents of ~foo~ (8 bytes ?) into rax
-   - ~lea rax, foo~ ⇒ error: invalid combination of opcode and operands
-#+BEGIN_SRC asm
+#+BEGIN_SRC asm :tangle mov-vs-lea.asm
 global _start
 section .data
-  foo: db 'foo'
+  foo: db '123456789'
 section .text
 _start:
-  lea rax, foo
+   mov rax, foo       ; load address of ~foo~ into rax
+   mov rax, [foo]     ; load contents of ~foo~ (first 8 bytes) into rax
+   ;lea rax, foo       ; error: invalid combination of opcode and operands
+   lea rax, [foo]     ; load address of ~foo~ into rax
+   lea rax, [foo + 1] ; load address of (~foo~ + 1) into rax
+   mov rax, [foo + 1] ; load contents of (~foo~ + 1) into rax
 #+END_SRC
-
-#+BEGIN_SRC asm
-global _start
-section .text
-_start:
-  lea rax, [rax]
-  mov rax, [rax]
-#+END_SRC
-   - ~lea rax, [foo]~ ⇒ load address of ~foo~ into rax
-   - ~lea rax, [foo + 1]~ ⇒ load address of (~foo~ + 1) into rax
-   - ~mov rax, [foo + 1]~ ⇒ load contents of (~foo~ + 1) into rax
 
 *** Example: print a string, one character at a time
 #+BEGIN_SRC asm :tangle loop.asm
@@ -445,7 +442,7 @@ _start:
     mov rax, 1 
 
     ; Syscalls can change rcx, so let's save it's value
-      push rcx
+    push rcx
 
     ; inovke syscall - prints the character encoded by the current value of
     syscall
@@ -465,6 +462,99 @@ _start:
     mov rdi, 0
     syscall
 #+END_SRC
+
+** Functions
+   - the ~call <addr>~ instruction is equivalent to ~push rip; jmp <addr>~
+   - so the current address is saved on the stack, and the CPU starts executing from <addr>
+   - the first 6 arguments are passed like for syscalls, except the 4th one:
+*** Functon Arguments - Linux
+  | Argument Nr. | Register |
+  |--------------+----------|
+  | 1st          | rdi      |
+  | 2nd          | rsi      |
+  | 3rd          | rdx      |
+  | 4th          | rcx      |
+  | 5th          | r8       |
+  | 6th          | r9       |
+   - additional args can be passed on the stack
+   - the ~ret~ instruction goes back the last address stored on the stack; equivalent to ~pop rip~
+   - functions must take due dilligence and leave the stack exactly as it was when the function started
+   - functions need to preserve the following registers: ~rbx~, ~rbp~, ~rsp~, ~r12-15~
+   - functions are free to trample the registers not enumerated above
+   - the above is not enforced in hardware, it is (the most common?) convention
+   - return value goes into ~rax~
+
+#+NAME: functions
+#+BEGIN_SRC asm :tangle functons.asm
+  global _start
+  section .data
+      newline:   db 10       ; 10 in decimal, 0A in hex - ASCII for newline char
+      hex_chars: db '0123456789ABCDEF'
+
+  section .text
+    print_newline: ; () -> void
+      mov rax, 1 ; write syscall
+      mov rdi, 1 ; stdout 
+      lea rsi, [newline] ; addr of newline char 
+      mov rdx, 1 ; count
+      syscall
+    ret
+
+    print_hex: ; (rdi - number to print as hex) -> void
+      mov rax, rdi
+      mov rcx, 64
+      .loop:
+        sub rcx, 4
+        push rax
+        sar rax, cl
+        and rax, 0xF
+
+        push rcx    ; will be trampled by syscall
+        mov rdi, 1  ; stdout
+        lea rsi, [hex_chars + rax] ; addr
+        mov rdx, 1  ; how many bytes to print
+        mov rax, 1  ; syscall id
+        syscall
+        pop rcx
+        pop rax
+        cmp rcx, 0
+        jne .loop
+    ret
+
+    exit_ok:
+      mov rax, 60  ; exit syscall
+      mov rdi, 0   ; exit code
+      syscall
+    ret
+
+#+END_SRC
+
+#+BEGIN_SRC asm :noweb yes :tangle functions-test.asm
+  <<functions>>
+  mov rdi, 0xABCDEF0123456789 ; 1st param
+  call print_hex
+
+  call print_newline ; function without args
+  call exit_ok
+#+END_SRC
+
+** Endianness
+   - x86-64 - "little endian" ⇒ in memory, data is stored with the least significant byte first
+   - ths does not apply to the bits inside the bytes, or to registers - just memory
+#+BEGIN_SRC asm :noweb yes :tangle endianness.asm
+  <<functions>>
+  section .data
+    foo: db 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+  section .text
+  _start:
+  mov rdi, [foo]
+  call print_hex
+  call print_newline
+  call exit_ok
+#+END_SRC
+
+#+RESULTS:
+: 0807060504030201
 
 ** Resources
 - nice quick-start, but format is a bit weird: https://www.nasm.us/doc/nasmdoc2.html#section-2.2

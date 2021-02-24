@@ -1,0 +1,3 @@
+#!/bin/bash
+
+nasm -felf64 $1 -o $1.o && ld -o $1.exe $1.o && ./$1.exe
