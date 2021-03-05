@@ -1,0 +1,69 @@
+* radare2
+  - r2con: https://www.youtube.com/channel/UCZo6gyBPj6Vgg8u2dfIhY4Q
+  - Pancake Nopcode: https://www.youtube.com/channel/UC3G6k7XfTgcWD2PJR8qJSkQ
+  - can seek to symbols: ~s loc.foo~
+  - can use tab completion - example, ~s loc.~ will auto-complete symbols
+  - commands can be combined: ~s loc.a; px 1~
+  - seek locations can be adjusted: ~s loc.a+1~
+
+#+BEGIN_SRC asm :tangle foo.asm
+  global _start
+  section .data
+    foo: dq 0
+    bar: dq 0
+#+END_SRC
+
+- to view symbol addresses:
+#+BEGIN_SRC
+:> is
+[Symbols]
+
+nth paddr      vaddr      bind   type   size lib name
+―――――――――――――――――――――――――――――――――――――――――――――――――――――
+1   0x00001000 0x00401000 LOCAL  SECT   0        .text
+2   0x00002000 0x00402000 LOCAL  SECT   0        .data
+3   ---------- 0x00000000 LOCAL  FILE   0        operand-size.asm
+4   0x00002000 0x00402000 LOCAL  NOTYPE 0        foo
+5   0x00002008 0x00402008 LOCAL  NOTYPE 0        bar
+6   0x00001000 0x00401000 GLOBAL NOTYPE 0        _start
+7   ---------- 0x00402010 GLOBAL NOTYPE 0        __bss_start
+8   ---------- 0x00402010 GLOBAL NOTYPE 0        _edata
+9   ---------- 0x00402010 GLOBAL NOTYPE 0        _end
+#+END_SRC
+
+- can't seem to be able to seek to address of foo:
+#+BEGIN_SRC
+:> s &foo
+Cannot seek to unknown address '&foo'
+:> s *foo
+Cannot seek to unknown address '*foo'
+:> s `foo`
+Cannot seek to unknown address ' -- r2 is for the people'
+:> s *foo
+Cannot seek to unknown address '*foo'
+:> s `*foo`
+#+END_SRC
+- the last one does not error out but goes to 0x00
+
+- when seeking to (manually inputted) addr of foo:
+#+BEGIN_SRC asm
+│             ;-- section..data:                                                                                                                                                                          │ 0x7ffef0b75610  5664 b7f0 fe7f 0000 6864 b7f0 fe7f 0000  Vd......hd......    │
+│             ;-- segment.LOAD2:                                                                                                                                                                          │ 0x7ffef0b75620  8864 b7f0 fe7f 0000 b164 b7f0 fe7f 0000  .d.......d......    │
+│             ;-- .data:                                                                                                                                                                                  │ 0x7ffef0b75630  cd64 b7f0 fe7f 0000 e164 b7f0 fe7f 0000  .d.......d......    │
+│             ;-- foo:                                                                                                                                                                                    │ 0x7ffef0b75640  f864 b7f0 fe7f 0000 0b65 b7f0 fe7f 0000  .d.......e......    │
+│             ;-- map._media_mihai_4A985B16985B003D_Users_Mihai_code_low_level_programming_operand_size.asm.exe.rw_:                                                                                      │ 0x7ffef0b75650  1f65 b7f0 fe7f 0000 3b65 b7f0 fe7f 0000  .e......;e......    ││             0x00402000      0100           add dword [rax], eax        ; [02] -rw- section size 16 named .data                                                                                          │ 0x7ffef0b75660  8465 b7f0 fe7f 0000 9265 b7f0 fe7f 0000  .e.......e......    │
+│             0x00402002      0000           add byte [rax], al                                                                                                                                           │ 0x7ffef0b75670  ad65 b7f0 fe7f 0000 c265 b7f0 fe7f 0000  .e.......e......    │
+│             0x00402004      0000           add byte [rax], al                                                                                                                                           │ 0x7ffef0b75680  f665 b7f0 fe7f 0000 1f66 b7f0 fe7f 0000  .e.......f......    │
+│             0x00402006      0000           add byte [rax], al                                                                                                                                           │ 0x7ffef0b75690  4066 b7f0 fe7f 0000 4d66 b7f0 fe7f 0000  @f......Mf......    │
+│             ;-- bar:                                                                                                                                                                                    │ 0x7ffef0b756a0  5e66 b7f0 fe7f 0000 6d66 b7f0 fe7f 0000  ^f......mf......    │
+│             0x00402008      0000           add byte [rax], al                                                                                                                                           │                                                                              │
+│             0x0040200a      0000           add byte [rax], al                                                                                                                                           │                                                                              │
+│             0x0040200c      0000           add byte [rax], al                                                                                                                                           │                                                                              │
+│             0x0040200e      0000           add byte [rax], al                                                                                                                                           │                                                                              │
+│             ;-- __bss_start:                                                                                                                                                                            │                                                                              │
+│             ;-- _edata:                                                                                                                                                                                 │                                                                              │
+│             ;-- _end:                                                                                                                                                                                   │                                                                              │
+#+END_SRC
+** cheatsheets
+- https://gist.github.com/cronos2810/6a72f7b9563c96d7863eb87bea375554
+- https://github.com/radareorg/radare2/blob/master/doc/intro.md

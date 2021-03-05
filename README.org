@@ -103,6 +103,7 @@ Segmentation fault (core dumped)
 - ~v~ open debug view
 - ~ds?~ - help on debug commands
 - ~F7~ or ~ds~ - step in
+- ~isq~ - view symbols
 - Q: where can i find a reference of all debugging commands ? not the ~p*~ ones, but stuff like ~F7~
 - Q: what is the ~orax~ register ?
 *** Mouse
@@ -220,6 +221,31 @@ PF - 1 if Parity of Least significant byte is even
 1 0 0 LT
 1 0 1 LE
 #+END_SRC
+
+#+BEGIN_SRC asm :tangle comparison-size.asm
+  global _start
+  section .data
+    a: db 0x42
+    b: db 0x4200
+    c: dw 0x4200
+    d: dw 0x0042
+    ; resulting .data layout:
+    ; 0x402000: 42 (a)
+    ; 0x402001: 00 (b)
+    ; 0x402002: 00 42 (c; bytes reversed)
+    ; 0x402004: 42 00 (d; bytes reversed)
+  section .text
+  _start:
+    mov rax, 42
+    cmp rax, 42
+    cmp rax, 4242 ; Z
+    cmp rax, 4200 ; C
+    cmp rax, [a]  ; C,Z
+    cmp rax, [b]  ; C,P,S
+    cmp rax, [c]  ; C,S
+#+END_SRC
+
+#+RESULTS:
 
 ** ~edb~
 - looks like a solid option but building from source is more work and packaged version is out of date (1.0.0, when latest is 1.3.0)
@@ -347,6 +373,26 @@ _start:
    lea rax, [foo]     ; load address of ~foo~ into rax
    lea rax, [foo + 1] ; load address of (~foo~ + 1) into rax
    mov rax, [foo + 1] ; load contents of (~foo~ + 1) into rax
+#+END_SRC
+
+  - when size is unknown, errors result
+  - the way size is specified is a bit counter-intuitive; it's specified on the destination
+#+BEGIN_SRC asm :tangle operand-size.asm
+  global _start
+  section .data
+    foo: dq 0xBEEFBABE
+    bar: dq 0xDECAFBAD
+  section .text
+  _start:
+    ;mov [foo], bar ; error: operation size not specified
+    ;mov [foo], 1 ; error: operation size not specified
+    ;mov byte[foo], bar ; ⇒ relocation truncated to fit: R_X86_64_8 against `.data'
+    ;mov [foo], [bar] ; error: invalid combination of opcode and operands
+    mov byte  [foo], 1 ; NOTE: bytes are stored in reverse, so this will leave foo as 0xBEEFBA01 (in memory: 0x01BAEFBE)
+    mov byte  [foo], 0x8BADF00D ; warning: byte data exceeds bounds [-w+number-overflow] (only 0D - 1 byte - will be moved)
+    mov word  [foo], 0x8BADF00D ; warning: word data exceeds bounds [-w+number-overflow]
+    mov dword [foo], 0x8BADF00D ; 
+    mov qword [foo], 0x8BADF00D ; warning: signed dword immediate exceeds bounds [-w+number-overflow], warning: dword data exceeds bounds [-w+number-overflow] 
 #+END_SRC
 
 *** Example: print a string, one character at a time
@@ -484,9 +530,9 @@ _start:
    - the above is not enforced in hardware, it is (the most common?) convention
    - return value goes into ~rax~
 
+** Functon Library
 #+NAME: functions
 #+BEGIN_SRC asm :tangle functons.asm
-  global _start
   section .data
       newline:   db 10       ; 10 in decimal, 0A in hex - ASCII for newline char
       hex_chars: db '0123456789ABCDEF'
@@ -531,9 +577,10 @@ _start:
 
 #+BEGIN_SRC asm :noweb yes :tangle functions-test.asm
   <<functions>>
+  global _start
+  _start:
   mov rdi, 0xABCDEF0123456789 ; 1st param
   call print_hex
-
   call print_newline ; function without args
   call exit_ok
 #+END_SRC
@@ -543,18 +590,73 @@ _start:
    - ths does not apply to the bits inside the bytes, or to registers - just memory
 #+BEGIN_SRC asm :noweb yes :tangle endianness.asm
   <<functions>>
+  global _start
   section .data
     foo: db 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+    bar: db 0x0102030405060708
+    baz: dq 0x0102030405060708
   section .text
   _start:
-  mov rdi, [foo]
-  call print_hex
-  call print_newline
-  call exit_ok
+    mov rdi, [foo]
+    call print_hex ; ⇒ 0807060504030201 - reverse order, because little endian
+    call print_newline
+
+    mov rdi, [bar]
+    call print_hex ; ⇒ 0203040506070808 - only the last byte, 08, was taken because bar is 'db' - the rest come from foo
+    call print_newline
+
+    mov rdi, [baz]
+    call print_hex ; ⇒ 0102030405060708 - all 8 bytes are stored, in the "correct" order because the whole value is stored as one
+    call print_newline
+    call exit_ok
+#+END_SRC
+
+** String length
+#+BEGIN_SRC asm :noweb yes :tangle string-length-null.asm
+  <<functions>>
+  global _start
+  section .data
+    foo: db "foobar", 0
+    bar: db "abc", 0
+  section .text
+
+  ; Calculate the length of a null-terminated string
+  ; $1/rdi: pointer (address) to string start
+  ; returns/rax: string length
+  str_len:
+    mov rsi, 0 ; init len 0
+    .loop:
+      mov dl, byte [rdi + rsi]
+      cmp dl, 0
+      je .end
+      inc rsi
+      jmp .loop
+    .end:
+      mov rax, rsi
+      ret
+
+  _start:
+    ; calc foo's length
+    mov rdi, foo
+    call str_len
+    mov rdi, rax
+    call print_hex
+    call print_newline
+
+    ; calc bar's length
+    mov rdi, bar
+    call str_len
+    mov rdi, rax
+    call print_hex
+    call print_newline
+
+    ; exit
+    call exit_ok
 #+END_SRC
 
 #+RESULTS:
-: 0807060504030201
+: 0000000000000006
+: 0000000000000003
 
 ** Resources
 - nice quick-start, but format is a bit weird: https://www.nasm.us/doc/nasmdoc2.html#section-2.2

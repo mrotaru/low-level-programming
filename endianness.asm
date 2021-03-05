@@ -1,4 +1,3 @@
-global _start
 section .data
     newline:   db 10       ; 10 in decimal, 0A in hex - ASCII for newline char
     hex_chars: db '0123456789ABCDEF'
@@ -39,11 +38,22 @@ section .text
     syscall
   ret
 
+global _start
 section .data
   foo: db 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
+  bar: db 0x0102030405060708
+  baz: dq 0x0102030405060708
 section .text
 _start:
-mov rdi, [foo]
-call print_hex
-call print_newline
-call exit_ok
+  mov rdi, [foo]
+  call print_hex ; ⇒ 0807060504030201 - reverse order, because little endian
+  call print_newline
+
+  mov rdi, [bar]
+  call print_hex ; ⇒ 0203040506070808 - only the last byte, 08, was taken because bar is 'db' - the rest come from foo
+  call print_newline
+
+  mov rdi, [baz]
+  call print_hex ; ⇒ 0102030405060708 - all 8 bytes are stored, in the "correct" order because the whole value is stored as one
+  call print_newline
+  call exit_ok

@@ -1,0 +1,44 @@
+** Registers
+*** Scratch
+  - rax - accumulator
+  - rcx - cycles (loops)
+  - rdx - store data during i/o ops
+  - rsi - source index in string manip cmds
+  - rdi - destination index in str manip cmds
+  - r8, r9, r10, r11 
+
+*** Reserved
+  - rsp - addr of topmost el in hw stack
+  - rbp - stack frame's base
+  - rbx - base register; used for addresssing in early cpus
+  - r12, r13, r14, r15
+
+** Functions
+  - functions need to preserve the following registers: ~rbx~, ~rbp~, ~rsp~, ~r12-15~
+  - return value goes into ~rax~
+*** Arguments - Linux
+  | Argument Nr. | Register |
+  |--------------+----------|
+  | 1st          | rdi      |
+  | 2nd          | rsi      |
+  | 3rd          | rdx      |
+  | 4th          | rcx      |
+  | 5th          | r8       |
+  | 6th          | r9       |
+
+** Syscalls
+*** Arguments - Linux
+  | Argument Nr. | Register |
+  |--------------+----------|
+  | 1st          | rdi      |
+  | 2nd          | rsi      |
+  | 3rd          | rdx      |
+  | 4th          | r10      |
+  | 5th          | r8       |
+  | 6th          | r9       |
+*** Common Syscalls
+| Id | System call | $1 (rdi)        | $2 (rsi)        | $3 (rdx)     | $4 (r10) | $5 (r8) | $5 (r9) |
+|----+-------------+-----------------+-----------------+--------------+----------+---------+---------|
+|  0 | read        | unsigned int fd | char *buf       | size_t count |          |         |         |
+|  1 | write       | unsigned int fd | const char *buf | size_t count |          |         |         |
+| 60 | exit        | int error_code  |                 |              |          |         |         |

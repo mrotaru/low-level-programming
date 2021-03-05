@@ -39,8 +39,40 @@ section .text
   ret
 
 global _start
+section .data
+  foo: db "foobar", 0
+  bar: db "abc", 0
+section .text
+
+; Calculate the length of a null-terminated string
+; $1/rdi: pointer (address) to string start
+; returns/rax: string length
+str_len:
+  mov rsi, 0 ; init len 0
+  .loop:
+    mov dl, byte [rdi + rsi]
+    cmp dl, 0
+    je .end
+    inc rsi
+    jmp .loop
+  .end:
+    mov rax, rsi
+    ret
+
 _start:
-mov rdi, 0xABCDEF0123456789 ; 1st param
-call print_hex
-call print_newline ; function without args
-call exit_ok
+  ; calc foo's length
+  mov rdi, foo
+  call str_len
+  mov rdi, rax
+  call print_hex
+  call print_newline
+
+  ; calc bar's length
+  mov rdi, bar
+  call str_len
+  mov rdi, rax
+  call print_hex
+  call print_newline
+
+  ; exit
+  call exit_ok
