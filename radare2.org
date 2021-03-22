@@ -1,10 +1,31 @@
 * radare2
+  - CLI debugger
+  - easy to compile from source, "it just works" (https://github.com/radareorg/radare2https://github.com/radareorg/radare2)
+  - clone repo, install dependencies (one command), and build - it will also be installed
+  - to update after build/install, go to the repo and: ~./sys/install.sh~ (it will ~git pull~, build and install new version)
+  - to start debugging: ~$ r2 -d loop.asm.exe~
+  - while debugging, ~:~ can be used to enter command mode
+  - ~.~ takes you to ~rip~, ~jk~ moves down/up
+  - ~v~ open debug view
+  - ~ds?~ - help on debug commands
+  - ~F7~ or ~ds~ - step in
+  - ~isq~ - view symbols
+  - ~drc~ - flag registers
+  - Q: where can i find a reference of all debugging commands ? not the ~p*~ ones, but stuff like ~F7~
+  - Q: what is the ~orax~ register ?
   - r2con: https://www.youtube.com/channel/UCZo6gyBPj6Vgg8u2dfIhY4Q
   - Pancake Nopcode: https://www.youtube.com/channel/UC3G6k7XfTgcWD2PJR8qJSkQ
   - can seek to symbols: ~s loc.foo~
   - can use tab completion - example, ~s loc.~ will auto-complete symbols
   - commands can be combined: ~s loc.a; px 1~
   - seek locations can be adjusted: ~s loc.a+1~
+** Core
+  - ~r2 core~ to open a core file in ~radare2~
+  - ~dr~ to print registers at the time of the dump
+  - ~pxr @ rsp~ to print the stack, with 16 bytes in a row
+  - ~pxr8 @ rsp~ to print the stack, with 8 bytes in a row
+  - https://reverseengineering.stackexchange.com/q/16844
+  - https://reverseengineering.stackexchange.com/q/20434
 
 #+BEGIN_SRC asm :tangle foo.asm
   global _start

@@ -5,16 +5,18 @@
   - rdx - store data during i/o ops
   - rsi - source index in string manip cmds
   - rdi - destination index in str manip cmds
-  - r8, r9, r10, r11 
+  - r8, r9, r10, r11
 
 *** Reserved
   - rsp - addr of topmost el in hw stack
   - rbp - stack frame's base
   - rbx - base register; used for addresssing in early cpus
-  - r12, r13, r14, r15
+  - r12, r13, r14, r15 - if used, must be restored
 
 ** Functions
-  - functions need to preserve the following registers: ~rbx~, ~rbp~, ~rsp~, ~r12-15~
+  - functions need to preserve the following registers: ~rbx~, ~rbp~, ~rsp~, ~r12-15~ (aka non-volatile, call-preserved)
+  - all other registers are considered "volatile" (aka caller-saved) and are fair game for any function to use in any way it chooses
+    - if the caller has already "taken" one of the volatile used, must be manually saved before/after function call - "calee saved"
   - return value goes into ~rax~
 *** Arguments - Linux
   | Argument Nr. | Register |

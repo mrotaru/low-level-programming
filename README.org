@@ -60,6 +60,7 @@
     |      8 | TF    |  T   | Trap Flag                        |
     |     10 | DF    |  D   | Direction Flag                   |
     |     11 | OF    |  O   | Overflow Flag                    |
+
 ** Hello World - segfaulting
 #+BEGIN_SRC asm :tangle hello.asm
 global _start
@@ -75,6 +76,7 @@ _start:
   mov rdx, 14 ; syscall arg #3
   syscall
 #+END_SRC
+
 - program has no exit instruction, and thus continues executing after syscall
 - next address likely will contain garbage resulting in such errors
 
@@ -115,6 +117,18 @@ Segmentation fault (core dumped)
 - using ~radare2~ for debugging: https://www.youtube.com/watch?v=Yn1fGs8WwSM (channel: https://www.youtube.com/c/BinaryAdventure/videos)
 - https://www.megabeets.net/a-journey-into-radare-2-part-1/
 
+** Core dumped ?
+   - often, mistakes in assembly programs result in "core dumped" messages
+   - if ~ulimit -c~ outputs ~0~, no cores were actually dumped; this can be for a number of reasons
+   - for reference info and reasons why a core wasn't dumped, see https://man7.org/linux/man-pages/man5/core.5.html
+   - ~ulimit -c unlimited~ should enable core dumps, in the form of a ~core~ file
+   - core files can be opened with ~gdb~ or other tools, like ~radare2~
+     - ~r2 core~ to open a core file in ~radare2~
+     - ~dr~ to print registers at the time of the dump
+     - ~pxr @ rsp~ to print the stack
+   - https://reverseengineering.stackexchange.com/q/16844
+   - https://reverseengineering.stackexchange.com/q/20434
+
 ** ~rax2~
    - useful tool for conversions - installed as part of ~radare2~
    - NOTE: it omits leading 0s
@@ -145,6 +159,47 @@ $ rax2 0x22 # ⇒ 34
 
     mov rax, 60 ; exit syscall
     xor rdi, rdi ; exit code
+    syscall
+#+END_SRC
+
+** Data section
+   - "hardcoded" into the binary when assembly is compiled
+   - will be loaded in memory at runtime, and can be changed - but won't affect the binary on the disk
+   - data will be padded - if declaring a word (2 bytes) but only providing one byte, the remaining bytes will be filled with 00
+   - variable "names" are just labels, not different from the labels used to reference function starting points
+   - every label corresponds to the address of the first byte (which is actually the last one in little endian)
+   - if data size exceeds the declared size, a warnign will be printed but as much data as fits in the variable will be taken
+   - if data size is less than the declared size, the remaining bytes will be padded with 00
+
+#+BEGIN_SRC asm :tangle data-section-layout.asm
+  global _start
+  section .data
+    a: db 0xAA     ; 1 byte
+    b: db 0xBB00   ; 00 - only one byte stored; warning: byte data exceeds bounds [-w+number-overflow]
+    c: dw 0xCC00   ; 2 bytes: 00, CC
+    d: dw 0x00DD   ; 2 bytes: DD, 00
+    e: dd 0x00EE   ; 4 bytes: EE, 00, 00, 00 (data only fills two bytes, so the remaining ones will be 00)
+    f: dd 0x00FFFF ; 8 bytes: FF, FF, 00, 00, 00, 00, 00, 00 (data fills 3 bytes, remaining ones will be 00)
+    ; resulting .data layout:
+    ; a  b  c     d     e           f
+    ; AA 00 00 CC DD 00 EE 00 00 00 FF FF 00 00 00 00 00 00 00
+#+END_SRC
+
+** .bss (block starting symbol) section
+   - https://en.wikipedia.org/wiki/.bss
+   - can be used as a "scratch" to hold uninitialized data
+   - compiler can optimize the resulting object file by storing only the size (as opposed to the ~.data~ section)
+   - declaring uninitialized data: https://www.nasm.us/doc/nasmdoc3.html#section-3.2.2
+#+BEGIN_SRC asm :tangle bss-example.asm
+  global _start
+  section .bss
+    buffer: resb    64  ; reserve 64 bytes 
+    words1: resw    10  ; reserve 10 words (20 bytes)
+    words2 resw     20  ; looks like the ":" after the label name is optional
+  section .text
+  _start:
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
     syscall
 #+END_SRC
 
@@ -222,27 +277,48 @@ PF - 1 if Parity of Least significant byte is even
 1 0 1 LE
 #+END_SRC
 
+  - when doing comparisons, if the size of the first operand is known, it determines how many bytes will be taken from the second operand
+  - when an operand is read from a memory address, bytes will be reversed
+  - when size is ambiguous, it can be specified on either operands (for ~cmp~, at least)
 #+BEGIN_SRC asm :tangle comparison-size.asm
   global _start
   section .data
-    a: db 0x42
-    b: db 0x4200
-    c: dw 0x4200
-    d: dw 0x0042
-    ; resulting .data layout:
-    ; 0x402000: 42 (a)
-    ; 0x402001: 00 (b)
-    ; 0x402002: 00 42 (c; bytes reversed)
-    ; 0x402004: 42 00 (d; bytes reversed)
+    a: db 0xAA   ; = 170
+    b: db 0xBB00 ; only 00 will be stored; a warning will be generated at compile time
+    c: dw 0xCC00
+    d: dw 0x00DD
+    ;         a b c   d
+    ; .data:  AA0000CCDD00
   section .text
   _start:
-    mov rax, 42
-    cmp rax, 42
-    cmp rax, 4242 ; Z
-    cmp rax, 4200 ; C
-    cmp rax, [a]  ; C,Z
-    cmp rax, [b]  ; C,P,S
-    cmp rax, [c]  ; C,S
+    mov rax, 0xAA
+    ; rax:    00000000AA
+    ; eax:      000000AA
+    ; al:             AA
+    ; ah:             00
+
+    cmp rax, 0xAA    ; EQ
+    cmp rax, [a]     ; NE - rax compared with 000000DDCC0000AA - 8 bytes (because rax is 8 bytes) starting at a, but reversed because little-endian
+    ; cmp 0xDDCC0000AA, [a]     ; error: invalid combination of opcode and operands
+    ; cmp [a], 0xDDCC0000AA     ; error: operation size not specified
+    cmp [a], byte 0xDDCC0000AA  ; EQ; warning: byte data exceeds bounds [-w+number-overflow]
+    cmp byte [a], 0xDDCC0000AA  ; EQ; warning: byte data exceeds bounds [-w+number-overflow]
+
+    mov rcx, 0xDDCC0000AA ; EQ
+    ; NOTE: mov is actually "movabs" in compiled code - https://reverseengineering.stackexchange.com/a/2628
+    ; quote from http://www.ucw.cz/~hubicka/papers/amd64/node1.html:
+    ; --------------------------------------------------------------
+    ; The immediate operands of instructions has not been extended to 64 bits to
+    ; keep instruction size smaller, instead they remain 32-bit sign extended.
+    ; Additionally the movabs instruction to load arbitrary 64-bit constant into
+    ; register and to load/store integer register from/to arbitrary constant
+    ; 64-bit address is available.
+    cmp rcx, [a]     ; EQ
+
+    ; because 'a' is only one byte, it should be compared with other 1 byte values
+    cmp al, [a]      ; EQ; in assembly, ~byte~ (as below) is automatically added
+    cmp al, byte [a] ; EQ
+    cmp ah, [a]      ; NE
 #+END_SRC
 
 #+RESULTS:
@@ -302,6 +378,25 @@ PF - 1 if Parity of Least significant byte is even
 #+END_SRC
    - interesting, but outdadet: https://www.strchr.com/x86_machine_code_statistics
 
+#+BEGIN_SRC asm :noweb yes :tangle mov-sizes.asm
+  global _start
+  section .text
+  _start:
+    mov rax, 0xFFFFFFFFFFFFFFFF
+
+    ; the following instructions will zero out the last 2 bytes (size of ax)
+    mov ax, 0
+    mov ax, 0x0
+
+    ; all the following instructions are written as 'mov 0' and will zero out all of rax
+    mov eax, 0
+    mov rax, 0
+    mov word rax, 0x00 ; warning: register size specification ignored [-w+other]
+    mov rax, 0x0000
+#+END_SRC
+
+#+RESULTS:
+
 ** Syscalls
    - on Linux, each syscall has a unique, constant integer as ID; for example, for ~write~ it's 1
    - syscalls are invoked with the ~syscall~ instruction on x86-64; on 32, interrupt 0x80 is used instead
@@ -360,7 +455,11 @@ PF - 1 if Parity of Least significant byte is even
 
    - to load the actual address of a location in a registry, use ~lea~
    - ~mov~ can be used instead of ~lea~ in some cases - when address does not require adjustments
-   - above, ~foo~ is an address in memory, referencing the first byte with contents ('f')
+   - ~lea~ is position-independent - unlike ~mov~ (not sure what this means, TBC)
+   - ~lea~ doesn't actually read the contents at the adress - it only computes the address
+   - ~lea~ can't be used without the square brackets in the second operand (TBC)
+   - ~lea~ doesn't touch the flags - ~lea eax, [eax + 1]~ and ~inc eax~ achieve the same, but the former doesn't trample flags
+   - simple ~lea~, with 2 operands, is much faster than 3-operand ~lea~
 #+BEGIN_SRC asm :tangle mov-vs-lea.asm
 global _start
 section .data
@@ -425,6 +524,8 @@ _start:
   syscall
 #+END_SRC
 
+*** Resources
+    - https://stackoverflow.com/questions/1658294/whats-the-purpose-of-the-lea-instruction
 ** Example: print rax register contents as hex
 #+BEGIN_SRC asm :tangle print-rax.asm
   global _start
@@ -768,7 +869,7 @@ _start:
    - to convert from two's complement to (regular?) representation, the inverse process can be used:
       1) invert all bits
       2) add 1
-    - ex 1: ~1011~ is -5 in two's complement (could also be interpreted as 11 in decimal)
+    - ex 1: ~1011~ (~b~ in hex) is -5 in two's complement (could also be interpreted as 11 in decimal)
         1) ~1011 inverted = 0100~
         2) ~0100 + 1 = 0101~ (5 in decimal)
     - ex 2: ~1111~ is -1 in two's complement (could also be interpreted as 15 in decimal)
@@ -785,9 +886,9 @@ _start:
   global _start
 
   section .data
-    foo: dq 0xffffffffffffffff
-    bar: dq 0xfffffffffffffffc
-    baz: dq 0x5
+    foo: dq 0xffffffffffffffff ; -1
+    bar: dq 0xfffffffffffffffb ; -5
+    baz: dq 0x5                ; +5
 
   section .text
 
@@ -822,34 +923,40 @@ _start:
   ; Print the input buffer as a 64-bit signed int, represented as two's complement
   ; $1/rdi: pointer (address) to first byte
   print_int:
+
     ; get ascii for the sign (+: 43, -: 45)
-    mov r8, 43     ; assume positive
     mov r9, [rdi]  ; copy the number
     sar r9, 63     ; shift 63 bits out
     cmp r9, 0      ; 0 - positive
     je .set_pos
     jne .set_neg
+
+    ; if nr is negative, store ascii for minus in r8, and convert from two's complement in r9
     .set_neg:
-    mov r8, 45     ; - (minus)
-    ; get the unsigned value
-    mov r9, [rdi]
-    not r9         ; invert all bits
-    add r9, 1      ; add 1
-    jmp .print_sign
+      mov r8, 45     ; ascii for - (minus)
+
+      ; get the unsigned value
+      mov r9, [rdi]
+      not r9         ; invert all bits
+      add r9, 1      ; add 1
+      jmp .print_sign
+
+    ; if the value is positive, store ascii for '+' in r8 and simply copy the value to r9
     .set_pos:
-    mov r9, [rdi]
+      mov r8, 43     ; ascii for '+'
+      mov r9, [rdi]
 
     ; print the sign
     .print_sign:
     mov rax, 1     ; syscall id
     mov rdx, 1     ; how many bytes to print - for syscall
     mov rdi, 1     ; stdout
-    push r8
+    push r8        ; put r8 (the ascii of the sign) on the stack, so we get an address to give to 'write' syscall
     mov rsi, rsp   ; what to print - ascii of sign
     syscall
     pop r8
 
-    ; use previously defined function to print the number
+    ; use previously defined function to print r9
     push r9
     mov rdi, rsp
     call print_uint
@@ -878,41 +985,119 @@ _start:
 
 #+RESULTS:
 : -1
-: -4
+: -5
 : +5
 
-
-#+BEGIN_SRC asm :noweb yes :tangle signed.asm
+** Function: read a character from stdin
+   - read a char and return it in ~rax~
+#+BEGIN_SRC asm :noweb yes :tangle read-char.asm
   <<functions>>
   global _start
+  section .data
+    prompt: db 'Enter a character: '
   section .text
   _start:
-    mov rax, -5
-    mov rax, -1
+    mov rax, 1     ; syscall id = 1 (write)
+    mov rdi, 1     ; syscall $1, fd = 1 (stdout)
+    mov rsi, prompt; syscall $2, *buf = &prompt (addr from where to take bytes to be written)
+    mov rdx, 19    ; syscall $3, count = 19 (how many bytes to write)
+    syscall
 
-    ; exit
-    call exit_ok
+    mov rax, 0     ; syscall id = 0 (read)
+    mov rdi, 0     ; syscall $1, fd = 0 (stdin)
+    push 0         ; zero out the top of the stack, where 
+    mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
+    mov rdx, 1     ; syscall $3, count = 1 (how many bytes to read)
+    syscall
+
+    pop rax        ; return value
+
+    call exit_ok   ; exit
 #+END_SRC
 
 #+RESULTS:
-
-#+BEGIN_SRC asm :noweb yes :tangle div.asm
-  <<functions>>
-  global _start
-  section .text
-  _start:
-    mov rax, 12
-    mov rcx, 10
-    div rcx
-
-    ; exit
-    call exit_ok
-#+END_SRC
-
-#+RESULTS:
+: Enter a character: 
 
 *** Resources
- x64 Assembly - Constructing and using a stack string - https://www.youtube.com/watch?v=SVQjbcXXOFc
+    - x64 Assembly - Constructing and using a stack string - https://www.youtube.com/watch?v=SVQjbcXXOFc
+    - ~read~ syscall: https://linuxhint.com/read_syscall_linux/
+
+** Function: read a word, and echo it back
+#+BEGIN_SRC asm :noweb yes :tangle read-word-echo.asm
+  global _start
+  section .bss
+    buf resb 10
+  section .text
+    ; Read a word from stdin, terminate it with a 0 and place it at the given address.
+    ; - $1, rdi: *buf - where to place read bytes
+    ; - $2, rsi: max_count, including the NULL terminator
+    ; Returns in rax:
+    ; - *buf - address of the first byte where the NULL-terminated string was placed
+    ; - 0, if input too big
+    read_word: ; (rdi: *buf, rsi: max_count) -> *buf, or 0 if input too big
+      mov r8, 0      ; current count
+      mov r9, rsi    ; max count
+      dec r9         ; one char will be occupied by the terminating 0
+
+      ; read a char into the top of the stack, then pop it into rax
+      .read_char:
+        push rdi       ; save; will be clobbered by syscall
+        mov rax, 0     ; syscall id = 0 (read)
+        mov rdi, 0     ; syscall $1, fd = 0 (stdin)
+        push 0         ; top of the stack will be used to place read byte
+        mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
+        mov rdx, 1     ; syscall $3, count (how many bytes to read)
+        syscall
+        pop rax
+        pop rdi
+
+      ; if read character is Enter (aka carriage-return, CR) - null-terminate the string and exit
+      cmp rax, 0x0a ; Enter
+      je .exit_ok
+
+      ; not enter ⇒ place it in the buffer, and read another one
+      mov byte [rdi+r8], al ; copy character into output buffer
+      inc r8                ; inc number of collected characters
+      cmp r8, r9            ; make sure number doesn't exceed maximum
+      je .exit_ok           ; if we have the required number of chars, exit
+      jb .read_char         ; if it's not greater, read another char
+
+      .exit_ok: ; add a null to the end of the string and return address of buffer (same as input)
+        add r8, 1
+        mov byte [rdi+r8], 0
+        mov rax, rdi
+        ret
+
+      .exit_err: ; return 0 (error)
+        mov rax, 0
+        ret
+
+  _start:
+    push 0
+    mov rdi, buf     ; $1 - *buf
+    mov rsi, 10      ; $2 - uint count
+    call read_word
+
+    ; print the read word
+    mov rax, 1     ; syscall id
+    mov rdx, 10    ; how many bytes to print - for syscall
+    mov rdi, 1     ; stdout
+    mov rsi, buf   ; source of data
+    syscall
+
+    ; print newline
+    push 0x0a
+    mov rax, 1     ; syscall id
+    mov rdx, 1     ; how many bytes to print - for syscall
+    mov rdi, 1     ; stdout
+    mov rsi, rsp   ; source of data
+    syscall
+    pop rax
+
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
+#+END_SRC
 
 ** Resources
 - nice quick-start, but format is a bit weird: https://www.nasm.us/doc/nasmdoc2.html#section-2.2
@@ -923,7 +1108,7 @@ _start:
 - good: https://cs.lmu.edu/~ray/notes/nasmtutorial/
 - videos: https://www.youtube.com/playlist?list=PLetF-YjXm-sCH6FrTz4AQhfH6INDQvQSn
   
-#+BEGIN_SRC asm :tangle foo.asm
+#+BEGIN_SRC asm :noweb yes :tangle foo.asm
   global _start
   section .text
   _start:

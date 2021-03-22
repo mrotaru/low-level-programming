@@ -41,9 +41,9 @@ section .text
 global _start
 
 section .data
-  foo: dq 0xffffffffffffffff
-  bar: dq 0xfffffffffffffffc
-  baz: dq 0x5
+  foo: dq 0xffffffffffffffff ; -1
+  bar: dq 0xfffffffffffffffb ; -5
+  baz: dq 0x5                ; +5
 
 section .text
 
@@ -78,34 +78,40 @@ print_uint:
 ; Print the input buffer as a 64-bit signed int, represented as two's complement
 ; $1/rdi: pointer (address) to first byte
 print_int:
+
   ; get ascii for the sign (+: 43, -: 45)
-  mov r8, 43     ; assume positive
   mov r9, [rdi]  ; copy the number
   sar r9, 63     ; shift 63 bits out
   cmp r9, 0      ; 0 - positive
   je .set_pos
   jne .set_neg
+
+  ; if nr is negative, store ascii for minus in r8, and convert from two's complement in r9
   .set_neg:
-  mov r8, 45     ; - (minus)
-  ; get the unsigned value
-  mov r9, [rdi]
-  not r9         ; invert all bits
-  add r9, 1      ; add 1
-  jmp .print_sign
+    mov r8, 45     ; ascii for - (minus)
+
+    ; get the unsigned value
+    mov r9, [rdi]
+    not r9         ; invert all bits
+    add r9, 1      ; add 1
+    jmp .print_sign
+
+  ; if the value is positive, store ascii for '+' in r8 and simply copy the value to r9
   .set_pos:
-  mov r9, [rdi]
+    mov r8, 43     ; ascii for '+'
+    mov r9, [rdi]
 
   ; print the sign
   .print_sign:
   mov rax, 1     ; syscall id
   mov rdx, 1     ; how many bytes to print - for syscall
   mov rdi, 1     ; stdout
-  push r8
+  push r8        ; put r8 (the ascii of the sign) on the stack, so we get an address to give to 'write' syscall
   mov rsi, rsp   ; what to print - ascii of sign
   syscall
   pop r8
 
-  ; use previously defined function to print the number
+  ; use previously defined function to print r9
   push r9
   mov rdi, rsp
   call print_uint
