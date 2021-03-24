@@ -28,6 +28,12 @@
   | 5th          | r8       |
   | 6th          | r9       |
 
+** Instructions
+   - ~test al, al~ ⇒ is ~al~ is 0, will set ~ZF~ (which triggers ~jz~)
+   - ~xor rax, rax~ ⇒ will set ~rax~ to be 0
+   - to test for unsigned values: ~ja, jae, jb, jbe~
+   - to test for signed values: ~jg, jge, jl, jle~
+
 ** Syscalls
 *** Arguments - Linux
   | Argument Nr. | Register |

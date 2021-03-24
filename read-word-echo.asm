@@ -2,7 +2,19 @@ global _start
 section .bss
   buf resb 10
 section .text
-  ; Read a word from stdin, terminate it with a 0 and place it at the given address.
+  read_char:
+    push 0         ; top of the stack will be used to place read byte
+    mov rax, 0     ; syscall id = 0 (read)
+    mov rdi, 0     ; syscall $1, fd = 0 (stdin)
+    mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
+    mov rdx, 1     ; syscall $3, count (how many bytes to read)
+    syscall
+    pop rax
+    ret
+
+  ; Read a word from stdin, terminate it with a 0 and place it at the given
+  ; address. Only the first word will be read; any characters exceeding the
+  ; maximum will be truncated.
   ; - $1, rdi: *buf - where to place read bytes
   ; - $2, rsi: max_count, including the NULL terminator
   ; Returns in rax:
@@ -12,37 +24,58 @@ section .text
     mov r8, 0      ; current count
     mov r9, rsi    ; max count
     dec r9         ; one char will be occupied by the terminating 0
+    mov r10, 0     ; 0 - no non-ws chars so far; 1 - reading; 2 - done
 
     ; read a char into the top of the stack, then pop it into rax
-    .read_char:
+    .next_char:
       push rdi       ; save; will be clobbered by syscall
-      mov rax, 0     ; syscall id = 0 (read)
-      mov rdi, 0     ; syscall $1, fd = 0 (stdin)
-      push 0         ; top of the stack will be used to place read byte
-      mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
-      mov rdx, 1     ; syscall $3, count (how many bytes to read)
-      syscall
-      pop rax
+      call read_char
       pop rdi
 
-    ; if read character is Enter (aka carriage-return, CR) - null-terminate the string and exit
-    cmp rax, 0x0a ; Enter
-    je .exit_ok
+      ; if read character is LF or 0, exit
+      cmp rax, 0x0a ; LF, Enter
+      je .exit
+      cmp rax, 0x00 ; NULL - Ctrl + D ⇒ exit with err
+      je .err
 
-    ; not enter ⇒ place it in the buffer, and read another one
-    mov byte [rdi+r8], al ; copy character into output buffer
-    inc r8                ; inc number of collected characters
-    cmp r8, r9            ; make sure number doesn't exceed maximum
-    je .exit_ok           ; if we have the required number of chars, exit
-    jb .read_char         ; if it's not greater, read another char
+      ; is the read character whitespace ?
+      cmp rax, 0x20 ; space
+      je .whitespace
+      cmp rax, 0x0d ; CR
+      je .whitespace
+      cmp rax, 0x09 ; tab
+      je .whitespace
 
-    .exit_ok: ; add a null to the end of the string and return address of buffer (same as input)
-      add r8, 1
+      jmp .not_whitespace
+
+    .whitespace:
+      cmp r10, 1      ; are we in a word ?
+      jne .next_char  ; not in a word ? just read the next char
+      mov r10, 2      ; in a word ? end it
+      jmp .next_char  ; ended the word; read next char
+
+    .not_whitespace:
+      cmp r10, 2      ; word terminated ? read next char
+      je .next_char
+      cmp r8, r9               ; check if we still have room
+      jb .add_char_start_word  ; add char if we do; start word (r10 = 1) if not already started
+      mov r10, 2               ; we get here only if r8 >= r9 ⇒ no more room
+      jmp .next_char           ; there might still be whitespace in the kernel buffer
+
+    .add_char_start_word:
+      cmp r10, 1
+      je .add_char
+      mov r10, 1
+    .add_char:
+      mov byte [rdi+r8], al ; copy character into output buffer
+      inc r8                ; inc number of collected characters
+      jmp .next_char
+
+    .exit:
       mov byte [rdi+r8], 0
       mov rax, rdi
       ret
-
-    .exit_err: ; return 0 (error)
+    .err:
       mov rax, 0
       ret
 
