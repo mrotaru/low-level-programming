@@ -2,16 +2,6 @@ global _start
 section .bss
   buf resb 10
 section .text
-  read_char:
-    push 0         ; top of the stack will be used to place read byte
-    mov rax, 0     ; syscall id = 0 (read)
-    mov rdi, 0     ; syscall $1, fd = 0 (stdin)
-    mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
-    mov rdx, 1     ; syscall $3, count (how many bytes to read)
-    syscall
-    pop rax
-    ret
-
   ; Read a word from stdin, terminate it with a 0 and place it at the given
   ; address. Only the first word will be read; any characters exceeding the
   ; maximum will be truncated.
@@ -29,7 +19,13 @@ section .text
     ; read a char into the top of the stack, then pop it into rax
     .next_char:
       push rdi       ; save; will be clobbered by syscall
-      call read_char
+      push 0         ; top of the stack will be used to place read byte
+      mov rax, 0     ; syscall id = 0 (read)
+      mov rdi, 0     ; syscall $1, fd = 0 (stdin)
+      mov rsi, rsp   ; syscall $2, *buf = rsp (addr where to put read byte)
+      mov rdx, 1     ; syscall $3, count (how many bytes to read)
+      syscall
+      pop rax
       pop rdi
 
       ; if read character is LF or 0, exit
@@ -85,6 +81,9 @@ _start:
   mov rsi, 10      ; $2 - uint count
   call read_word
 
+  cmp rax, 0 ; if error, just exit
+  je .exit
+
   ; print the read word
   mov rax, 1     ; syscall id
   mov rdx, 10    ; how many bytes to print - for syscall
@@ -101,6 +100,7 @@ _start:
   syscall
   pop rax
 
-  mov rax, 60  ; exit syscall
-  mov rdi, 0   ; exit code
-  syscall
+  .exit:
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
