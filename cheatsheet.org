@@ -19,14 +19,14 @@
     - if the caller has already "taken" one of the volatile used, must be manually saved before/after function call - "calee saved"
   - return value goes into ~rax~
 *** Arguments - Linux
-  | Argument Nr. | Register |
-  |--------------+----------|
-  | 1st          | rdi      |
-  | 2nd          | rsi      |
-  | 3rd          | rdx      |
-  | 4th          | rcx      |
-  | 5th          | r8       |
-  | 6th          | r9       |
+  | Argument Nr. | Register | 8b  | 16b | 32b |
+  |--------------+----------+-----+-----+-----|
+  | 1st          | rdi      | dil | di  | edi |
+  | 2nd          | rsi      | sil | si  | esi |
+  | 3rd          | rdx      | dl  | dx  | edx |
+  | 4th          | rcx      | cl  | cx  | ecx |
+  | 5th          | r8       | r8b | r8w | r8d |
+  | 6th          | r9       | r9b | r9w | r9d |
 
 ** Instructions
    - ~test al, al~ ⇒ is ~al~ is 0, will set ~ZF~ (which triggers ~jz~)

@@ -94,29 +94,6 @@ hello, world!
 Segmentation fault (core dumped)
 #+END_SRC
 
-** ~radare2~
-- CLI debugger
-- easy to compile from source, "it just works" (https://github.com/radareorg/radare2https://github.com/radareorg/radare2)
-- clone repo, install dependencies (one command), and build - it will also be installed
-- to update after build/install, go to the repo and: ~./sys/install.sh~ (it will ~git pull~, build and install new version)
-- to start debugging: ~$ r2 -d loop.asm.exe~
-- while debugging, ~:~ can be used to enter command mode
-- ~.~ takes you to ~rip~, ~jk~ moves down/up
-- ~v~ open debug view
-- ~ds?~ - help on debug commands
-- ~F7~ or ~ds~ - step in
-- ~isq~ - view symbols
-- Q: where can i find a reference of all debugging commands ? not the ~p*~ ones, but stuff like ~F7~
-- Q: what is the ~orax~ register ?
-*** Mouse
-   - even if r2 is a CLI app, mouse does work and can be useful
-   - clicking on a register in the debug view will hilight it in regsiters view
-     - only does full matches though - so click on ecx won't hilight rcx
-   - clicking on [x] in top-left of panels will close them
-*** Resources
-- using ~radare2~ for debugging: https://www.youtube.com/watch?v=Yn1fGs8WwSM (channel: https://www.youtube.com/c/BinaryAdventure/videos)
-- https://www.megabeets.net/a-journey-into-radare-2-part-1/
-
 ** Core dumped ?
    - often, mistakes in assembly programs result in "core dumped" messages
    - if ~ulimit -c~ outputs ~0~, no cores were actually dumped; this can be for a number of reasons
@@ -129,20 +106,7 @@ Segmentation fault (core dumped)
    - https://reverseengineering.stackexchange.com/q/16844
    - https://reverseengineering.stackexchange.com/q/20434
 
-** ~rax2~
-   - useful tool for conversions - installed as part of ~radare2~
-   - NOTE: it omits leading 0s
-#+BEGIN_SRC sh
-$ rax2 Bx1122334455667788 # ⇒ 1000100100010001100110100010001010101011001100111011110001000b
-$ rax2 0x40 # ⇒ 64
-$ rax2 Bx40 # ⇒ 1000000b # (64 in binary)
-$ rax2 60 # ⇒ 0x3c
-$ rax2 Bx3c # ⇒ 111100b
-$ rax2 0001000100100010b # ⇒ 0x1122
-$ rax2 0x22 # ⇒ 34
-#+END_SRC
-
-** Hello World - Fixed Exit
+** Hello world - fixed exit
 #+BEGIN_SRC asm :tangle hello-fixed.asm
   global _start
 
@@ -162,7 +126,7 @@ $ rax2 0x22 # ⇒ 34
     syscall
 #+END_SRC
 
-** Data section
+** .data section
    - "hardcoded" into the binary when assembly is compiled
    - will be loaded in memory at runtime, and can be changed - but won't affect the binary on the disk
    - data will be padded - if declaring a word (2 bytes) but only providing one byte, the remaining bytes will be filled with 00
@@ -180,10 +144,18 @@ $ rax2 0x22 # ⇒ 34
     d: dw 0x00DD   ; 2 bytes: DD, 00
     e: dd 0x00EE   ; 4 bytes: EE, 00, 00, 00 (data only fills two bytes, so the remaining ones will be 00)
     f: dd 0x00FFFF ; 8 bytes: FF, FF, 00, 00, 00, 00, 00, 00 (data fills 3 bytes, remaining ones will be 00)
+    w: dw 'abcd'
     ; resulting .data layout:
     ; a  b  c     d     e           f
     ; AA 00 00 CC DD 00 EE 00 00 00 FF FF 00 00 00 00 00 00 00
+  section .text
+  _start:
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
 #+END_SRC
+
+   - ref: https://www.nasm.us/doc/nasmdoc3.html#section-3.2.1
 
 ** .bss (block starting symbol) section
    - https://en.wikipedia.org/wiki/.bss
@@ -203,7 +175,7 @@ $ rax2 0x22 # ⇒ 34
     syscall
 #+END_SRC
 
-** Comparisons and Conditionals
+** Comparisons and conditionals
    - assembly doesn't have ~if~ statements - but it has instructions which, after executing, will flip bits in a special register, ~rflags~
    - the following instruction can then check the ~rflags~ bits it is interested in
    - ~cmp~ and ~sub~ are very similar; in both cases, a subtraction is performed and flags are set in the same manner; ~sub~ will also update the first operand with the result
@@ -323,13 +295,9 @@ PF - 1 if Parity of Least significant byte is even
 
 #+RESULTS:
 
-** ~edb~
-- looks like a solid option but building from source is more work and packaged version is out of date (1.0.0, when latest is 1.3.0)
-- better display of ~rflags~ - just the meaningful ones, and they change colour when changed
-
-** Loops
+** Conditionals
    - let's say we want to set ~rbx~ to 1 if ~rax~ is > 50, and to ~0~ otherwise:
-#+BEGIN_SRC asm :tangle conditional.asm
+#+BEGIN_SRC asm :tangle conditionals.asm
   global _start
   section .text
   _start:
@@ -337,47 +305,240 @@ PF - 1 if Parity of Least significant byte is even
     cmp rax, 50   ; compare the two operands - will set dedicated register falgs
     jl .large     ; if th 
 #+END_SRC
-** Common Instructions
-   - added instructions used in the book, and grouped related ones
-#+BEGIN_SRC asm
-  ; most common instruction
-  mov
 
-  ; stack, calls, addresses
-  push
-  pop
-  call
-  ret
-  syscall
-  lea
+** Loops
+   - option 1 - use an unconditional jump to end the loop
+#+BEGIN_SRC asm :tangle loop-unconditional-jmp.asm
+  global _start
+  section .text
+  _start:
+    mov rax, 0   ; count
+    .loop:
+      cmp rax, 10  ; reached max ?
+      je .done     ; exit loop
+      ; ... do some work ...
+      inc rax      ; increment loop count
+      jmp .loop    ; loop again
+    .done:
+      ; loop completed
+#+END_SRC
 
-  ; bitwise
+   - option 2 - allow execution to continue when looping not neccessary
+#+BEGIN_SRC asm :tangle loop-continue.asm
+  global _start
+  section .text
+  _start:
+    mov rax, 0   ; count
+    .loop:
+      ; ... do some work ...
+      inc rax      ; increment loop count
+      cmp rax, 10  ; reached max ?
+      jne .loop    ; exit loop
+    .done:
+      ; loop completed
+#+END_SRC
+
+** Signed integers and two's complement
+   - on x86, signed integers are represented using two's complement
+   - in two's complement, the high (leftmost) bit is the sign bit
+   - if the high bit is 1, the number is negative; otherwise it's positive
+   - to get the negative version of a number:
+      1) subtract 1
+      2) invert all bits
+    - ex: ~0101~ is 5; to get -5:
+        1) ~0101 - 1 = 0100~ 
+        2) ~0100 inverted = 1011~ (-5 in two's complement)
+   - to convert from two's complement to (regular?) representation, the inverse process can be used:
+      1) invert all bits
+      2) add 1
+    - ex 1: ~1011~ (~b~ in hex) is -5 in two's complement (could also be interpreted as 11 in decimal)
+        1) ~1011 inverted = 0100~
+        2) ~0100 + 1 = 0101~ (5 in decimal)
+    - ex 2: ~1111~ is -1 in two's complement (could also be interpreted as 15 in decimal)
+        1) ~1111 inverted = 0000~
+        2) ~0000 + 1 = 0001~ (1 in decimal)
+    - for 8 bits (1 byte):
+      - max unsigned value is 255
+      - max signed is 127 (0111_1111), min is -128 (1000_0000, 0x80; inv = 0111_1111; +1 = 1000_0000)
+#+BEGIN_SRC asm :noweb yes :tangle twos-complement.asm
+  global _start
+  section .data
+  section .text
+  _start:
+    mov al, -1   ; al = 0xFF, 1111_1111; unsigned = 255
+    mov al, -2   ; al = 0xFE, 1111_1110; unsigned = 254
+    mov al, 255  ; 
+    mov al, 256  ; mov al, 0 ; warning
+    mov al, 257  ; mov al, 1 ; warning
+
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
+#+END_SRC
+
+#+RESULTS:
+
+*** Resources
+   - https://39iosdev.gitlab.io/ccd-iqt/idf/assembly/ASM_Basic_Operations/negative_bitwise.html
+
+** Simple math, carry and overflow flags
+   - in assembly, there is no metadata associated with values stored memory, such as their type
+   - when encountering an arithmetic instruction, the CPU will "just do it" without trying to understand whether it's a signed or unsigned number
+     - it will, however, set the CF or OF flag
+   - carry flag (CF) - set when the result cannot be represented as an unsigned value, in the available space
+     - no sign bit required
+     - has no meaning for signed numbers - signed numbers can cause overflow, but not carry 
+     - ex: adding 1 to 0xFF will cause CF to be set
+   - overflow flag (OF) - set when the result cannot be represented as a signed value, in the available space
+     - you overflow into the sign bit
+     - has no meaning for unsigned numbers - unsigned numbers can carry, but not overflow
+     - ex: subtracting 1 from 0x80 will cause OF to be set
+   - ~inc~, ~dec~ don't affect the carry/overflow flags
+   - to clear the OF and CF flags: ~test al, al~
+   - the ~set*~ family of instructions can be used to set something based on flags
+     - ex: ~setc rax~ ⇒ sets rax to the same as the the carry flag (1 or 0)
+#+BEGIN_SRC asm :noweb yes :tangle math-add-sub.asm
+  global _start
+  section .data
+    a: db 0x35 
+  section .text
+  _start:
+    mov al, 255
+    add al, 1 ; CF = 1, OF = 0
+    mov al, 0 
+    sub al, 1 ; CF = 1, OF = 0
+
+    mov al, 0x80 ; al = 1000_0000, 0x80, -128 in two's complement
+    sub al, 1    ; al = 0111_1111, 0x7f, +129 in two's copmlement; OF=1
+    test al, al
+    sub al, 0xFF ; al = 80; OF=1, CF=1
+
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
+#+END_SRC
+
+
+#+RESULTS:
+*** Resources
+   - [[https://www.youtube.com/watch?v=ehAJ_zqF0Y4][Modern x64 Assembly 6: ADD, SUB INC and DEC]]
+   - http://www.posix.nl/linuxassembly/nasmdochtml/nasmdoca.html#section-A.5
+
+** Multiplication
+   - use the smallest registers that will do the job, as it would be more efficient
+     - ex: don't use ~eax~ when all you need is ~al~
+   - significantly different from ~add~ and ~sub~:
+   - 1) different instructions for signed/unsigned ops
+   - 2) results of a multiplication/divisoin may require much more space
+     - if each operand is 2 digits, the result might require up to 4 digits - regardless of base
+     - ex: 99 x 99 = 9801
+   - unsigned multiplications done with ~mul~, divisions with ~div~; both instructions have signed counterparts (~imul~, ~idiv~)
+   - the size of the operand will be used to termine how many bytes of ~rax~ to take as the first operand
+   - ~mul~ result can span two registers; below, "operand" refers to the second operand - the paramter given to ~mul~:
+     - if the second register is required, CF and OF will be set to 1; otherwise both will be unset (zero)
+     - if operand is 8 bits, the result can be stored in ~ax~ - high byte to ~ah~, low byte to ~al~
+       - CF/OF being set doesn't mean there's something ~dx~, because high bits go into ~ah~
+       - in all other cases, CF/OF means high bits were set in ~dx/edx/rdx~
+     - if operand is 16 bits: high bits go to ~dx~, low bits to ~ax~
+     - if operand is 32 bits: high bits go to ~edx~, low bits to ~eax~
+     - if operand is 64 bits: high bits go to ~rdx~, low bits to ~rax~
+#+BEGIN_SRC asm :noweb yes :tangle math-mul.asm
+  global _start
+  section .data
+  section .text
+  _start:
+    mov al,  0xFF ; 255
+    mov r8b, 0xFF ; 255
+    mul r8  ; multiply value in rax (al) with value in r8b -> 65025, 0xFE01
+    ; ax: 0xfe01, CF=0, OF=0
+
+    mov ax,  0xFFFF  ; 65535
+    mov r8,  0xFFFFF ; 1048575 (will be assembled to r8d)
+    mul r8b  ; 65535 * 1048575 = 68718362625 (0xfffef0001) - but, because r8b is 1 byte, 255 * 255 = 0xfe01 
+    ; eax: 0xfe01, CF=1, OF=1
+
+    ; same as above - but multiplying by r8w instead of r8
+    mov ax,  0xFFFF  ; 65535
+    mov r8,  0xFFFFF ; 1048575
+    mul r8w  ; 68718362625 0xfffef0001 - using two registers
+    ; dx: 0xfffef, ax: 0001, CF=1, OF=1
+
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
+#+END_SRC
+
+** Division
+   - unlike ~mul~, ~div~ won't touch the flags - but can generate exceptions
+   - it can use two registers for both input and output
+   - the number to be divided will be taken from ~rdx:rax~
+   - important: given the above, clearn ~rdx~ before dividing !
+   - result has two components: quotient and remainder
+     - if a word (2 bytes) is divided, ~al~ will hold the quotient, ~ah~ the remainder)
+     - if a dword (4 bytes) is divided, two registers will be used: ~ax~ - quotient, ~dx~ remainder
+     - similarly for 8 and 16 bytes; the quotient and remainder will span increasing parts of ~rax~ and ~rdx~, respectivelly
+#+BEGIN_SRC asm :noweb yes :tangle math-div.asm
+  global _start
+  section .data
+  section .text
+  _start:
+    ; the instruction param size determines how many bytes will be taken as dividend
+    mov ax,  0x4e9b ; 20123 (0x9b = 155)
+    mov r8w, 0x03e8 ;  1000 (0xe8 = 232) - only one byte (r8b) will be taken into account
+    div r8b
+    ; al: 0x56, 86  (quotient)
+    ; ah: 0xab, 171 (remainder)
+    ; 86 * 232 = 19952 + 171 = 20123
+
+    ; same as above, but dividing by r8w
+    mov ax,  0x4e9b ; 20_123
+    mov r8w, 0x03e8 ;  1_000
+    div r8w
+    ; rax: 20 (0x14), rdx: 123 (0x7b)
+
+    ; same as above, but eax is much larger
+    mov rdx, 0 ; if this is not cleared, result would be wrong !
+    mov eax, 0xFFFF4e9b ; 4_294_921_883
+    mov r8w, 0x03e8     ;         1_000
+    div r8w
+    ; ax: 0x0014 (20)
+    ; rax: 0xffff0014   ; 4_294_901_780 (only ax was set, ffff is leftover from previous operations !)
+    ; rdx: 0x7b (123)
+    mov rdx, 0 ; cleanup
+
+    ; to divide 4626 (0x1212) by 1000:
+    mov rax, 0x1212 ; 4626
+    mov r8w, 0x03e8 ; 1000
+    div r8w
+    ; rax: 4, rdx: 626 (0x272)
+    mov rdx, 0 ; cleanup
+
+    ; if we lave ax the same but set dx, the bits in dx will be the high bits of
+    ; a word so 201.234 (0x31212) will be divided by 1000:
+    mov rdx, 0x0003
+    mov rax, 0x1212
+    mov r8w, 0x03e8 ;  1000
+    div r8w
+    ; rax: 201 (0xc9), rdx: 234 (0xea)
+
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
+#+END_SRC
+
+*** Resources
+    - https://docs.oracle.com/cd/E19455-01/806-3773/6jct9o0am/index.html
+
+** Bitwise operations
+#+BEGIN_SRC asm :noweb yes :tangle bitwise.asm
   xor
   or
   and
   shl
   sar rax, cl ; if trying to use, for ex, rcx: error: invalid combination of opcode and operands
-
-  ; conditionals/loops
-  test
-  je
-  jmp
-  jne
-
-  ; math
-  add
-  cmp
-  inc
-  sub
-  fld
-  fstp
-  imul
-  mul
-  idiv
-  div r8 ; divide value in ax (or dx:ax, edx:eax, rdx:rax) with value in r8; result ⇒ rax; remainder ⇒ rdx
 #+END_SRC
-   - interesting, but outdadet: https://www.strchr.com/x86_machine_code_statistics
 
+** ~mov~ operations with different operand sizes
 #+BEGIN_SRC asm :noweb yes :tangle mov-sizes.asm
   global _start
   section .text
@@ -387,11 +548,14 @@ PF - 1 if Parity of Least significant byte is even
     ; the following instructions will zero out the last 2 bytes (size of ax)
     mov ax, 0
     mov ax, 0x0
+    mov ax, 0x000000
 
     ; all the following instructions are written as 'mov 0' and will zero out all of rax
     mov eax, 0
     mov rax, 0
     mov word rax, 0x00 ; warning: register size specification ignored [-w+other]
+    ; mov rax, word 0x00 ; error: mismatch in operand sizes
+    ; mov rax, word 0x0000 ; error: mismatch in operand sizes
     mov rax, 0x0000
 #+END_SRC
 
@@ -431,7 +595,7 @@ PF - 1 if Parity of Least significant byte is even
    - https://blog.packagecloud.io/eng/2016/04/05/the-definitive-guide-to-linux-system-calls/
    - "Where do you find the syscall table for Linux?" - https://unix.stackexchange.com/a/499016/39603
      
-** Pointers and Addresses
+** Pointers and addresses
    - some syscalls require "pointers" as args - addresses
    - on a 64 bit CPU, addresses are 64 bits - 8 bytes
    - instructions use square brackets to "dereference" a pointer - and take contents at the address, as opposed to the actual address itself
@@ -856,29 +1020,6 @@ _start:
 : 256
 : 305419896
 
-** Signed integers and two's complement
-   - on x86, signed integers are represented using two's complement
-   - in two's complement, the high (leftmost) bit is the sign bit
-   - if the high bit is 1, the number is negative; otherwise it's positive
-   - to get the negative version of a number:
-      1) subtract 1
-      2) invert all bits
-    - ex: ~0101~ is 5; to get -5:
-        1) ~0101 - 1 = 0100~ 
-        2) ~0100 inverted = 1011~ (-5 in two's complement)
-   - to convert from two's complement to (regular?) representation, the inverse process can be used:
-      1) invert all bits
-      2) add 1
-    - ex 1: ~1011~ (~b~ in hex) is -5 in two's complement (could also be interpreted as 11 in decimal)
-        1) ~1011 inverted = 0100~
-        2) ~0100 + 1 = 0101~ (5 in decimal)
-    - ex 2: ~1111~ is -1 in two's complement (could also be interpreted as 15 in decimal)
-        1) ~1111 inverted = 0000~
-        2) ~0000 + 1 = 0001~ (1 in decimal)
-
-*** Resources
-   - https://39iosdev.gitlab.io/ccd-iqt/idf/assembly/ASM_Basic_Operations/negative_bitwise.html
-
 ** Function: print buffer as a signed 64-bit integer
 
 #+BEGIN_SRC asm :noweb yes :tangle print-signed-number.asm
@@ -1132,17 +1273,112 @@ _start:
       syscall
 #+END_SRC
 
+** Function: parse string as an unsigned integer
+#+BEGIN_SRC asm :noweb yes :tangle parse-int.asm
+  global _start
+  section .data
+    a: db '291', 0 ; 2 = 0x02, 29 =  0x1d, 291 = 0x123
+  section .text
+    ; If $1 is an ASCII code for digit, return the digit as an unsigned int.
+    ; OK: u8 (rax)
+    ; Err: 0 - no error; 1 - not a digit char (r11b)
+    get_digit:
+      cmp dil, 48 ; 0x30 ; = '0'
+      jb .err
+      cmp dil, 57 ; 0x39 ; = '9'
+      ja .err
+      mov al, dil
+      sub al, 48
+      mov r11b, 0
+      ret
+      .err:
+        mov r11b, 1
+        ret
+
+    ; Takes a null-terminated string and parses it as a 64-bit unsigned int. 
+    ; Max number that can be read: 18.446.744.073.709.551.615. (18.5 bln bln)
+    ; ----------------------------------------------------------------------
+    ; OK: resulting number (rax)
+    ; Err: 0 - no error; 1 - parsing failed, 2 - oveflow - number too big (r11b)
+    ; ----------------------------------------------------------------------
+    parse_int:
+      mov r9, 0  ; count
+      mov r10, 0 ; return value
+      push r12
+      .next_char:
+        mov dl, byte [rdi + r9] ; dl - rdx, not rdi
+
+        ; check if string terminated
+        cmp dl, 0
+        je .exit_ok
+
+        ; not terminated; check and add digit
+        push rdi       ; save
+        mov dil, dl
+        call get_digit
+        pop rdi        ; restore
+        cmp r11b, 0
+        jne .err_parse
+
+        mov cl, al    ; save digit
+        mov rax, r10  ; prep multiplication of curr nr by 10
+        mov r11, 10   ; multiplication factor = 10
+        mul r11       ; multiply - result goes into rax
+
+        ; check if overflow from multiply
+        xor r12, r12       ; can another register/part be used ?
+        setc r12b
+        cmp r12b, 1
+        je .err_overflow
+
+        mov r12b, cl  ; get last digit
+        add rax, r12  ; r11 was multiplied by 10 and ends with 0; add latest digit
+        mov r10, rax
+        inc r9
+
+        jmp .next_char
+
+        .err_parse:
+          pop r12
+          mov r11b, 1
+          ret
+        .err_overflow:
+          pop r12
+          mov r11b, 2
+          ret
+
+        .exit_ok:
+          pop r12
+          mov r11b, 0
+          mov rax, r10
+          ret
+  _start:
+      mov rdi, a
+      call parse_int
+
+      mov rax, 60  ; exit syscall
+      mov rdi, 0   ; exit code
+      syscall
+#+END_SRC
+
+#+RESULTS:
+
 ** Resources
 - nice quick-start, but format is a bit weird: https://www.nasm.us/doc/nasmdoc2.html#section-2.2
-- Anatomy of a system call, part 1 - https://lwn.net/Articles/604287/
+- Anatomy of a system call, part 1 - https://lwn.net/Articles/604287
 - https://github.com/torvalds/linux/tree/master/include/uapi/linux
 - examples: https://www.csee.umbc.edu/portal/help/nasm/sample_64.shtml
 - very good, but 32-bit: https://asmtutor.com/#lesson2
 - good: https://cs.lmu.edu/~ray/notes/nasmtutorial/
 - videos: https://www.youtube.com/playlist?list=PLetF-YjXm-sCH6FrTz4AQhfH6INDQvQSn
+- instructions reference, compiled from Intel manuals: https://www.felixcloutier.com/x86/
   
 #+BEGIN_SRC asm :noweb yes :tangle foo.asm
   global _start
+  section .data
   section .text
   _start:
+    mov rax, 60  ; exit syscall
+    mov rdi, 0   ; exit code
+    syscall
 #+END_SRC

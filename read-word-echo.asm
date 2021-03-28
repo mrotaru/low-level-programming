@@ -81,7 +81,7 @@ _start:
   mov rsi, 10      ; $2 - uint count
   call read_word
 
-  cmp rax, 0 ; if error, just exit
+  cmp rax, 0       ; if error, just exit
   je .exit
 
   ; print the read word

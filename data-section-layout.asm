@@ -6,6 +6,12 @@ section .data
   d: dw 0x00DD   ; 2 bytes: DD, 00
   e: dd 0x00EE   ; 4 bytes: EE, 00, 00, 00 (data only fills two bytes, so the remaining ones will be 00)
   f: dd 0x00FFFF ; 8 bytes: FF, FF, 00, 00, 00, 00, 00, 00 (data fills 3 bytes, remaining ones will be 00)
+  w: dw 'abcd'
   ; resulting .data layout:
   ; a  b  c     d     e           f
   ; AA 00 00 CC DD 00 EE 00 00 00 FF FF 00 00 00 00 00 00 00
+section .text
+_start:
+  mov rax, 60  ; exit syscall
+  mov rdi, 0   ; exit code
+  syscall

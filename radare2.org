@@ -1,12 +1,16 @@
 * radare2
-  - CLI debugger
+  - CLI debugger; has web UIs but they are buggy, unmaintained, implement a small subset, require node, npm, yearn
   - easy to compile from source, "it just works" (https://github.com/radareorg/radare2https://github.com/radareorg/radare2)
   - clone repo, install dependencies (one command), and build - it will also be installed
   - to update after build/install, go to the repo and: ~./sys/install.sh~ (it will ~git pull~, build and install new version)
-  - to start debugging: ~$ r2 -d loop.asm.exe~
+  - to start debugging: ~$ r2 -dQ loop.asm.exe~ (~d~ - debug, ~Q~ - quiet, no quote)
   - while debugging, ~:~ can be used to enter command mode
   - ~.~ takes you to ~rip~, ~jk~ moves down/up
-  - ~v~ open debug view
+  - ~v~ open panels view (debug mode); while in panels mode, press ~?~ to see help
+  - use ~e~ to change what is displayed in a panel; for example, ~drc~ so it shows the flags
+  - use ~w~ to enter "window" mode, and resize current panel with ~HJKL~
+  - use ~X~ to close the current panel
+  - use ~v= foo~ to save current panel layout as ~foo~; then ~v foo~ to load the layout
   - ~ds?~ - help on debug commands
   - ~F7~ or ~ds~ - step in
   - ~isq~ - view symbols
@@ -85,6 +89,28 @@ Cannot seek to unknown address '*foo'
 │             ;-- _edata:                                                                                                                                                                                 │                                                                              │
 │             ;-- _end:                                                                                                                                                                                   │                                                                              │
 #+END_SRC
+*** Mouse
+   - even if r2 is a CLI app, mouse does work and can be useful
+   - clicking on a register in the debug view will hilight it in regsiters view
+     - only does full matches though - so click on ecx won't hilight rcx
+   - clicking on [x] in top-left of panels will close them
+*** Resources
+- using ~radare2~ for debugging: https://www.youtube.com/watch?v=Yn1fGs8WwSM (channel: https://www.youtube.com/c/BinaryAdventure/videos)
+- https://www.megabeets.net/a-journey-into-radare-2-part-1/
+
 ** cheatsheets
 - https://gist.github.com/cronos2810/6a72f7b9563c96d7863eb87bea375554
 - https://github.com/radareorg/radare2/blob/master/doc/intro.md
+
+** ~rax2~
+   - useful tool for conversions - installed as part of ~radare2~
+   - NOTE: it omits leading 0s
+#+BEGIN_SRC sh
+$ rax2 Bx1122334455667788 # ⇒ 1000100100010001100110100010001010101011001100111011110001000b
+$ rax2 0x40 # ⇒ 64
+$ rax2 Bx40 # ⇒ 1000000b # (64 in binary)
+$ rax2 60 # ⇒ 0x3c
+$ rax2 Bx3c # ⇒ 111100b
+$ rax2 0001000100100010b # ⇒ 0x1122
+$ rax2 0x22 # ⇒ 34
+#+END_SRC
