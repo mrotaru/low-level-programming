@@ -15,6 +15,9 @@
   - ~F7~ or ~ds~ - step in
   - ~isq~ - view symbols
   - ~drc~ - flag registers
+  - ~db~ - list breakpoints; ~db 0xff~ - set breakpoint; ~dc~ - continue; ~do~ - reopen
+  - ~dsi <cond>~ - continue until condition (example ??)
+  - ~dso <n>~ - step over ~n~ instructions (automatically puts breakpoint, hence a bp-related message)
   - Q: where can i find a reference of all debugging commands ? not the ~p*~ ones, but stuff like ~F7~
   - Q: what is the ~orax~ register ?
   - r2con: https://www.youtube.com/channel/UCZo6gyBPj6Vgg8u2dfIhY4Q
